@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Galaxy</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{background:#0a0a0a;color:#fff;font-family:'Courier New',monospace;min-height:100vh;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px;}
+  #noise{position:fixed;inset:0;pointer-events:none;z-index:999;opacity:0.15;}
+  #back-btn{position:fixed;top:16px;left:20px;background:transparent;border:none;color:#444;font-family:'Courier New',monospace;font-size:0.65rem;letter-spacing:0.2em;cursor:pointer;text-transform:uppercase;transition:color 0.2s;}
+  #back-btn:hover{color:#aaa;}
+  h1{font-size:1.8rem;letter-spacing:0.5em;color:#ccc;font-weight:200;text-shadow:0 0 40px rgba(255,255,255,0.15);}
+  p{font-size:0.65rem;letter-spacing:0.25em;opacity:0.25;}
+  .star{position:fixed;border-radius:50%;background:#fff;animation:twinkle 3s infinite alternate;}
+  @keyframes twinkle{0%{opacity:0.1}100%{opacity:0.6}}
+</style>
+</head>
+<body>
+<canvas id="noise"></canvas>
+<button id="back-btn" onclick="window.location.href='../'">← MONO GAMES</button>
+<h1>GALAXY</h1>
+<p>COMING SOON</p>
+<script>
+const nc=document.getElementById('noise'),nctx=nc.getContext('2d');
+function resize(){nc.width=innerWidth;nc.height=innerHeight;}resize();
+window.addEventListener('resize',resize);
+function drawNoise(){const img=nctx.createImageData(nc.width,nc.height);for(let i=0;i<img.data.length;i+=4){const v=Math.random()*255|0;img.data[i]=img.data[i+1]=img.data[i+2]=v;img.data[i+3]=255;}nctx.putImageData(img,0,0);}
+setInterval(drawNoise,80);
+for(let i=0;i<80;i++){const s=document.createElement('div');s.className='star';const sz=Math.random()*2+0.5;s.style.cssText=`width:${sz}px;height:${sz}px;left:${Math.random()*100}vw;top:${Math.random()*100}vh;animation-delay:${Math.random()*3}s;animation-duration:${2+Math.random()*3}s;`;document.body.appendChild(s);}
+</script>
+</body>
+</html>

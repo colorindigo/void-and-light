@@ -89,10 +89,10 @@ function resize(){W=cv.width=innerWidth;H=cv.height=innerHeight;}
 resize();
 
 const IS_RETINA=window.devicePixelRatio>=2;
-const R=IS_RETINA?2:1; // scale factor
-const PLAYER_W=32*R, PLAYER_H=38*R;
-const BULLET_W=2*R, BULLET_H=14*R;
-const ENEMY_SIZE=22*R;
+const R=IS_RETINA?2:1;
+const PLAYER_W=30*R, PLAYER_H=24*R;
+const BW=1*R, BH=10*R;   // bullet: thin and short
+const ES=18*R;            // enemy size — smaller
 
 // ── Difficulty ──
 const DIFF={
@@ -100,7 +100,7 @@ const DIFF={
   normal:{shootMin:180,shootRnd:220,bulletSpd:2.2*R,diveChance:0.00022,descentPx:36,formSpeed:0.35,waveShootBonus:12,waveBulletBonus:0.12*R,lives:3},
   hard:{shootMin:90,shootRnd:110,bulletSpd:3.2*R,diveChance:0.00042,descentPx:48,formSpeed:0.44,waveShootBonus:6,waveBulletBonus:0.18*R,lives:2},
 };
-let difficulty='easy', D=DIFF[difficulty];
+let difficulty='easy',D=DIFF[difficulty];
 let waveShootMin,waveBulletSpd,waveDiveChance,waveFormSpeed;
 
 function computeWaveParams(){
@@ -121,301 +121,176 @@ let player,bullets,enemyBullets,enemies,particles;
 let keys={},lastShot=0;
 const SHOT_COOLDOWN=260;
 let frameId,waveClearing=false;
-
-// ── ENEMY DESIGNS — bug/alien shapes ──
-// Type 0: Scarab beetle — wide carapace, mandibles, antenna
-function drawBeetle(c,x,y,s,col,t){
-  c.strokeStyle=col; c.fillStyle='transparent';
-  const sc=s*0.9;
-  // Wing cases (elytra) — two curved halves
-  c.lineWidth=1.2;
-  c.beginPath();
-  c.moveTo(x,y-sc*0.38);
-  c.bezierCurveTo(x+sc*0.55,y-sc*0.3, x+sc*0.52,y+sc*0.28, x+sc*0.08,y+sc*0.38);
-  c.lineTo(x-sc*0.08,y+sc*0.38);
-  c.bezierCurveTo(x-sc*0.52,y+sc*0.28, x-sc*0.55,y-sc*0.3, x,y-sc*0.38);
-  c.stroke();
-  // Center spine line
-  c.lineWidth=0.7; c.globalAlpha*=0.8;
-  c.beginPath(); c.moveTo(x,y-sc*0.36); c.lineTo(x,y+sc*0.36); c.stroke();
-  c.globalAlpha=1;
-  // Mandibles
-  c.lineWidth=1;
-  c.beginPath(); c.moveTo(x-sc*0.1,y+sc*0.36); c.lineTo(x-sc*0.28,y+sc*0.55); c.stroke();
-  c.beginPath(); c.moveTo(x+sc*0.1,y+sc*0.36); c.lineTo(x+sc*0.28,y+sc*0.55); c.stroke();
-  // Antennae
-  c.lineWidth=0.8;
-  c.beginPath(); c.moveTo(x-sc*0.12,y-sc*0.36); c.quadraticCurveTo(x-sc*0.3,y-sc*0.6,x-sc*0.2,y-sc*0.72); c.stroke();
-  c.beginPath(); c.moveTo(x+sc*0.12,y-sc*0.36); c.quadraticCurveTo(x+sc*0.3,y-sc*0.6,x+sc*0.2,y-sc*0.72); c.stroke();
-  // Eye dots
-  c.fillStyle=col;
-  c.beginPath(); c.arc(x-sc*0.14,y-sc*0.18,sc*0.07,0,Math.PI*2); c.fill();
-  c.beginPath(); c.arc(x+sc*0.14,y-sc*0.18,sc*0.07,0,Math.PI*2); c.fill();
-}
-
-// Type 1: Hornet — segmented body, swept wings, stinger
-function drawHornet(c,x,y,s,col,t){
-  c.strokeStyle=col; c.lineWidth=1.1;
-  const sc=s*0.92;
-  // Wings (swept back)
-  c.beginPath();
-  c.moveTo(x-sc*0.08,y-sc*0.05);
-  c.bezierCurveTo(x-sc*0.5,y-sc*0.35,x-sc*0.62,y+sc*0.1,x-sc*0.38,y+sc*0.2);
-  c.lineTo(x-sc*0.08,y+sc*0.05); c.stroke();
-  c.beginPath();
-  c.moveTo(x+sc*0.08,y-sc*0.05);
-  c.bezierCurveTo(x+sc*0.5,y-sc*0.35,x+sc*0.62,y+sc*0.1,x+sc*0.38,y+sc*0.2);
-  c.lineTo(x+sc*0.08,y+sc*0.05); c.stroke();
-  // Body segments
-  c.lineWidth=1.3;
-  c.beginPath(); c.ellipse(x,y-sc*0.12,sc*0.14,sc*0.22,0,0,Math.PI*2); c.stroke();
-  c.beginPath(); c.ellipse(x,y+sc*0.18,sc*0.11,sc*0.18,0,0,Math.PI*2); c.stroke();
-  // Stinger
-  c.lineWidth=1;
-  c.beginPath(); c.moveTo(x,y+sc*0.36); c.lineTo(x,y+sc*0.52); c.stroke();
-  c.beginPath(); c.moveTo(x-sc*0.06,y+sc*0.48); c.lineTo(x,y+sc*0.56); c.lineTo(x+sc*0.06,y+sc*0.48); c.stroke();
-  // Eyes
-  c.fillStyle=col;
-  c.beginPath(); c.arc(x-sc*0.08,y-sc*0.28,sc*0.06,0,Math.PI*2); c.fill();
-  c.beginPath(); c.arc(x+sc*0.08,y-sc*0.28,sc*0.06,0,Math.PI*2); c.fill();
-}
-
-// Type 2: Crab alien — wide claws, round body, multiple legs
-function drawCrab(c,x,y,s,col,t){
-  c.strokeStyle=col; c.lineWidth=1.1;
-  const sc=s*0.95;
-  // Body
-  c.beginPath(); c.ellipse(x,y,sc*0.28,sc*0.22,0,0,Math.PI*2); c.stroke();
-  // Claws left
-  c.lineWidth=1.2;
-  c.beginPath(); c.moveTo(x-sc*0.28,y); c.lineTo(x-sc*0.5,y-sc*0.18); c.lineTo(x-sc*0.62,y-sc*0.1); c.stroke();
-  c.beginPath(); c.moveTo(x-sc*0.5,y-sc*0.18); c.lineTo(x-sc*0.62,y+sc*0.06); c.stroke();
-  // Claws right
-  c.beginPath(); c.moveTo(x+sc*0.28,y); c.lineTo(x+sc*0.5,y-sc*0.18); c.lineTo(x+sc*0.62,y-sc*0.1); c.stroke();
-  c.beginPath(); c.moveTo(x+sc*0.5,y-sc*0.18); c.lineTo(x+sc*0.62,y+sc*0.06); c.stroke();
-  // Legs (3 per side)
-  c.lineWidth=0.7;
-  [-0.12,0,0.12].forEach((dy,i)=>{
-    c.beginPath(); c.moveTo(x-sc*0.26,y+dy*sc); c.lineTo(x-sc*0.44,y+(dy+0.18)*sc); c.stroke();
-    c.beginPath(); c.moveTo(x+sc*0.26,y+dy*sc); c.lineTo(x+sc*0.44,y+(dy+0.18)*sc); c.stroke();
-  });
-  // Eyes on stalks
-  c.lineWidth=0.8;
-  c.beginPath(); c.moveTo(x-sc*0.1,y-sc*0.22); c.lineTo(x-sc*0.14,y-sc*0.38); c.stroke();
-  c.beginPath(); c.moveTo(x+sc*0.1,y-sc*0.22); c.lineTo(x+sc*0.14,y-sc*0.38); c.stroke();
-  c.fillStyle=col;
-  c.beginPath(); c.arc(x-sc*0.14,y-sc*0.4,sc*0.07,0,Math.PI*2); c.fill();
-  c.beginPath(); c.arc(x+sc*0.14,y-sc*0.4,sc*0.07,0,Math.PI*2); c.fill();
-}
-
-// Type 3: Spider — round abdomen, 8 jagged legs
-function drawSpider(c,x,y,s,col,t){
-  c.strokeStyle=col; c.lineWidth=1;
-  const sc=s*0.9;
-  // Abdomen
-  c.beginPath(); c.arc(x,y+sc*0.1,sc*0.25,0,Math.PI*2); c.stroke();
-  // Thorax
-  c.beginPath(); c.arc(x,y-sc*0.18,sc*0.16,0,Math.PI*2); c.stroke();
-  // 8 legs (4 per side), jagged
-  const legAngles=[-0.55,-0.3,-0.05,0.2];
-  legAngles.forEach((a,i)=>{
-    const lx1=x-sc*0.16,ly1=y+(a-0.1)*sc;
-    const lx2=lx1-sc*(0.28+i*0.04),ly2=ly1-sc*0.12;
-    const lx3=lx2-sc*0.18,ly3=ly2+sc*0.22;
-    c.beginPath(); c.moveTo(lx1,ly1); c.lineTo(lx2,ly2); c.lineTo(lx3,ly3); c.stroke();
-    const rx1=x+sc*0.16,ry1=ly1;
-    const rx2=rx1+sc*(0.28+i*0.04),ry2=ry1-sc*0.12;
-    const rx3=rx2+sc*0.18,ry3=ry2+sc*0.22;
-    c.beginPath(); c.moveTo(rx1,ry1); c.lineTo(rx2,ry2); c.lineTo(rx3,ry3); c.stroke();
-  });
-  // Fangs
-  c.lineWidth=1.1;
-  c.beginPath(); c.moveTo(x-sc*0.08,y-sc*0.34); c.lineTo(x-sc*0.13,y-sc*0.5); c.stroke();
-  c.beginPath(); c.moveTo(x+sc*0.08,y-sc*0.34); c.lineTo(x+sc*0.13,y-sc*0.5); c.stroke();
-  // Eyes cluster
-  c.fillStyle=col;
-  [-0.12,-0.04,0.04,0.12].forEach(dx=>{
-    c.beginPath(); c.arc(x+dx*sc,y-sc*0.18,sc*0.04,0,Math.PI*2); c.fill();
-  });
-}
-
-// Type 4: Mantis — triangular head, spiked forelegs, folded wings
-function drawMantis(c,x,y,s,col,t){
-  c.strokeStyle=col; c.lineWidth=1.1;
-  const sc=s*0.9;
-  // Head triangle
-  c.beginPath(); c.moveTo(x,y-sc*0.48); c.lineTo(x+sc*0.2,y-sc*0.2); c.lineTo(x-sc*0.2,y-sc*0.2); c.closePath(); c.stroke();
-  // Body
-  c.beginPath(); c.moveTo(x-sc*0.12,y-sc*0.18); c.lineTo(x-sc*0.1,y+sc*0.35); c.lineTo(x+sc*0.1,y+sc*0.35); c.lineTo(x+sc*0.12,y-sc*0.18); c.closePath(); c.stroke();
-  // Folded wings
-  c.lineWidth=0.9;
-  c.beginPath(); c.moveTo(x-sc*0.12,y-sc*0.05); c.bezierCurveTo(x-sc*0.45,y-sc*0.2,x-sc*0.5,y+sc*0.1,x-sc*0.18,y+sc*0.2); c.stroke();
-  c.beginPath(); c.moveTo(x+sc*0.12,y-sc*0.05); c.bezierCurveTo(x+sc*0.45,y-sc*0.2,x+sc*0.5,y+sc*0.1,x+sc*0.18,y+sc*0.2); c.stroke();
-  // Spiked forelegs
-  c.lineWidth=1.1;
-  c.beginPath(); c.moveTo(x-sc*0.15,y-sc*0.12); c.lineTo(x-sc*0.42,y-sc*0.32); c.lineTo(x-sc*0.36,y-sc*0.5); c.stroke();
-  c.beginPath(); c.moveTo(x-sc*0.38,y-sc*0.34); c.lineTo(x-sc*0.5,y-sc*0.3); c.stroke();
-  c.beginPath(); c.moveTo(x+sc*0.15,y-sc*0.12); c.lineTo(x+sc*0.42,y-sc*0.32); c.lineTo(x+sc*0.36,y-sc*0.5); c.stroke();
-  c.beginPath(); c.moveTo(x+sc*0.38,y-sc*0.34); c.lineTo(x+sc*0.5,y-sc*0.3); c.stroke();
-  // Eyes
-  c.fillStyle=col;
-  c.beginPath(); c.arc(x-sc*0.08,y-sc*0.36,sc*0.07,0,Math.PI*2); c.fill();
-  c.beginPath(); c.arc(x+sc*0.08,y-sc*0.36,sc*0.07,0,Math.PI*2); c.fill();
-}
-
-// Type 5: Boss moth — big wingspan, skull pattern, antenna
-function drawMoth(c,x,y,s,col,t){
-  c.strokeStyle=col; c.lineWidth=1.3;
-  const sc=s;
-  const flap=Math.sin(t*0.006)*sc*0.06;
-  // Upper wings
-  c.beginPath();
-  c.moveTo(x-sc*0.08,y-sc*0.05+flap);
-  c.bezierCurveTo(x-sc*0.55,y-sc*0.45+flap,x-sc*0.7,y-sc*0.05,x-sc*0.42,y+sc*0.15);
-  c.lineTo(x-sc*0.1,y+sc*0.05); c.stroke();
-  c.beginPath();
-  c.moveTo(x+sc*0.08,y-sc*0.05+flap);
-  c.bezierCurveTo(x+sc*0.55,y-sc*0.45+flap,x+sc*0.7,y-sc*0.05,x+sc*0.42,y+sc*0.15);
-  c.lineTo(x+sc*0.1,y+sc*0.05); c.stroke();
-  // Lower wings (smaller)
-  c.lineWidth=1;
-  c.beginPath();
-  c.moveTo(x-sc*0.1,y+sc*0.05);
-  c.bezierCurveTo(x-sc*0.4,y+sc*0.12,x-sc*0.38,y+sc*0.42,x-sc*0.1,y+sc*0.32);
-  c.stroke();
-  c.beginPath();
-  c.moveTo(x+sc*0.1,y+sc*0.05);
-  c.bezierCurveTo(x+sc*0.4,y+sc*0.12,x+sc*0.38,y+sc*0.42,x+sc*0.1,y+sc*0.32);
-  c.stroke();
-  // Body
-  c.lineWidth=1.3;
-  c.beginPath(); c.ellipse(x,y+sc*0.12,sc*0.1,sc*0.28,0,0,Math.PI*2); c.stroke();
-  // Skull dots on wings
-  c.fillStyle=col; c.globalAlpha*=0.6;
-  c.beginPath(); c.arc(x-sc*0.35,y-sc*0.1,sc*0.07,0,Math.PI*2); c.fill();
-  c.beginPath(); c.arc(x+sc*0.35,y-sc*0.1,sc*0.07,0,Math.PI*2); c.fill();
-  c.globalAlpha=1;
-  // Antennae
-  c.lineWidth=0.9;
-  c.beginPath(); c.moveTo(x-sc*0.06,y-sc*0.28); c.quadraticCurveTo(x-sc*0.25,y-sc*0.55,x-sc*0.18,y-sc*0.7); c.stroke();
-  c.beginPath(); c.moveTo(x+sc*0.06,y-sc*0.28); c.quadraticCurveTo(x+sc*0.25,y-sc*0.55,x+sc*0.18,y-sc*0.7); c.stroke();
-  c.fillStyle=col;
-  c.beginPath(); c.arc(x-sc*0.18,y-sc*0.72,sc*0.05,0,Math.PI*2); c.fill();
-  c.beginPath(); c.arc(x+sc*0.18,y-sc*0.72,sc*0.05,0,Math.PI*2); c.fill();
-}
-
-const ENEMY_DRAWS=[drawBeetle,drawHornet,drawCrab,drawSpider,drawMantis,drawMoth];
-
-// ── PLAYER SHIP — detailed with turbine glow ──
-function drawPlayer(x,y,alpha,t){
-  const w=PLAYER_W, h=PLAYER_H;
-  const col='rgba(255,255,255,'+alpha+')';
-
-  // === Turbine glow (drawn first, behind ship) ===
-  const turbineY=y+h*0.42;
-  const glow1=ctx.createRadialGradient(x-w*0.22,turbineY,0,x-w*0.22,turbineY,w*0.28);
-  glow1.addColorStop(0,'rgba(255,255,255,0.55)');
-  glow1.addColorStop(0.3,'rgba(200,220,255,0.25)');
-  glow1.addColorStop(1,'rgba(0,0,0,0)');
-  ctx.fillStyle=glow1;
-  ctx.beginPath(); ctx.arc(x-w*0.22,turbineY,w*0.28,0,Math.PI*2); ctx.fill();
-
-  const glow2=ctx.createRadialGradient(x+w*0.22,turbineY,0,x+w*0.22,turbineY,w*0.28);
-  glow2.addColorStop(0,'rgba(255,255,255,0.55)');
-  glow2.addColorStop(0.3,'rgba(200,220,255,0.25)');
-  glow2.addColorStop(1,'rgba(0,0,0,0)');
-  ctx.fillStyle=glow2;
-  ctx.beginPath(); ctx.arc(x+w*0.22,turbineY,w*0.28,0,Math.PI*2); ctx.fill();
-
-  // Turbine exhaust flicker
-  const flicker=0.7+Math.sin(t*0.18)*0.3;
-  ctx.globalAlpha=alpha*flicker;
-  ctx.fillStyle='rgba(255,255,255,0.9)';
-  ctx.beginPath(); ctx.ellipse(x-w*0.22,turbineY+h*0.06,w*0.07,h*(0.06+Math.sin(t*0.25)*0.03),0,0,Math.PI*2); ctx.fill();
-  ctx.beginPath(); ctx.ellipse(x+w*0.22,turbineY+h*0.06,w*0.07,h*(0.06+Math.sin(t*0.25+1)*0.03),0,0,Math.PI*2); ctx.fill();
-  ctx.globalAlpha=alpha;
-
-  ctx.strokeStyle=col;
-  ctx.lineWidth=1.4*R;
-
-  // === Main hull ===
-  ctx.beginPath();
-  ctx.moveTo(x, y-h*0.5);           // nose tip
-  ctx.lineTo(x+w*0.12, y-h*0.25);   // nose right
-  ctx.lineTo(x+w*0.18, y-h*0.05);   // cockpit right
-  ctx.lineTo(x+w*0.28, y+h*0.05);   // wing root right
-  ctx.lineTo(x+w*0.5,  y+h*0.32);   // wing tip right
-  ctx.lineTo(x+w*0.34, y+h*0.42);   // wing trailing right
-  ctx.lineTo(x+w*0.24, y+h*0.35);   // engine nacelle outer right
-  ctx.lineTo(x+w*0.28, y+h*0.48);   // nacelle bottom right
-  ctx.lineTo(x+w*0.16, y+h*0.48);   // nacelle inner right
-  ctx.lineTo(x+w*0.16, y+h*0.36);   // center body right
-  ctx.lineTo(x+w*0.08, y+h*0.36);   // center
-  ctx.lineTo(x,        y+h*0.44);   // tail center dip
-  ctx.lineTo(x-w*0.08, y+h*0.36);
-  ctx.lineTo(x-w*0.16, y+h*0.36);
-  ctx.lineTo(x-w*0.16, y+h*0.48);
-  ctx.lineTo(x-w*0.28, y+h*0.48);
-  ctx.lineTo(x-w*0.24, y+h*0.35);
-  ctx.lineTo(x-w*0.34, y+h*0.42);
-  ctx.lineTo(x-w*0.5,  y+h*0.32);
-  ctx.lineTo(x-w*0.28, y+h*0.05);
-  ctx.lineTo(x-w*0.18, y-h*0.05);
-  ctx.lineTo(x-w*0.12, y-h*0.25);
-  ctx.closePath();
-  ctx.stroke();
-
-  // === Cockpit canopy ===
-  ctx.lineWidth=1*R;
-  ctx.beginPath();
-  ctx.moveTo(x-w*0.1, y-h*0.2);
-  ctx.quadraticCurveTo(x, y-h*0.46, x+w*0.1, y-h*0.2);
-  ctx.quadraticCurveTo(x+w*0.13, y-h*0.08, x, y-h*0.06);
-  ctx.quadraticCurveTo(x-w*0.13, y-h*0.08, x-w*0.1, y-h*0.2);
-  ctx.stroke();
-
-  // Cockpit fill glow
-  ctx.globalAlpha=alpha*0.15;
-  ctx.fillStyle='#fff';
-  ctx.beginPath();
-  ctx.moveTo(x-w*0.09,y-h*0.2);
-  ctx.quadraticCurveTo(x,y-h*0.44,x+w*0.09,y-h*0.2);
-  ctx.quadraticCurveTo(x,y-h*0.07,x-w*0.09,y-h*0.2);
-  ctx.fill();
-  ctx.globalAlpha=alpha;
-
-  // === Wing detail lines ===
-  ctx.lineWidth=0.7*R;
-  ctx.globalAlpha=alpha*0.5;
-  // Right wing stripe
-  ctx.beginPath(); ctx.moveTo(x+w*0.28,y+h*0.05); ctx.lineTo(x+w*0.46,y+h*0.28); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(x+w*0.28,y+h*0.15); ctx.lineTo(x+w*0.42,y+h*0.3); ctx.stroke();
-  // Left wing stripe
-  ctx.beginPath(); ctx.moveTo(x-w*0.28,y+h*0.05); ctx.lineTo(x-w*0.46,y+h*0.28); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(x-w*0.28,y+h*0.15); ctx.lineTo(x-w*0.42,y+h*0.3); ctx.stroke();
-  ctx.globalAlpha=alpha;
-
-  // === Engine nacelles (outline) ===
-  ctx.lineWidth=1*R;
-  ctx.beginPath(); ctx.ellipse(x+w*0.22,y+h*0.41,w*0.08,h*0.07,0,0,Math.PI*2); ctx.stroke();
-  ctx.beginPath(); ctx.ellipse(x-w*0.22,y+h*0.41,w*0.08,h*0.07,0,0,Math.PI*2); ctx.stroke();
-
-  // === Center hull line ===
-  ctx.lineWidth=0.6*R;
-  ctx.globalAlpha=alpha*0.4;
-  ctx.beginPath(); ctx.moveTo(x,y-h*0.48); ctx.lineTo(x,y+h*0.36); ctx.stroke();
-  ctx.globalAlpha=alpha;
-}
-
-// ── State ──
 let playerHitCooldown=0;
 let formDir=1,formX=0,formDescentOffset=0;
 const FORM_RANGE=IS_RETINA?55:38;
 const DESCENT_FRAMES=480;
 let descentFrame=0;
 
+// ── ENEMY DRAWS — geometric, angular, bug-like ──
+// All use simple strokes, no gradients, no fills except dots
+
+// Type 0: Worker bug — squat rectangular body, short mandibles, dot eyes
+function drawWorker(c,x,y,s){
+  const h=s*0.5,w=s*0.7;
+  c.strokeRect(x-w,y-h,w*2,h*2);              // main body
+  c.strokeRect(x-w*0.5,y-h*1.3,w,h*0.5);      // head block
+  // mandibles
+  c.beginPath();c.moveTo(x-w*0.35,y+h);c.lineTo(x-w*0.55,y+h*1.5);c.stroke();
+  c.beginPath();c.moveTo(x+w*0.35,y+h);c.lineTo(x+w*0.55,y+h*1.5);c.stroke();
+  // antenna
+  c.beginPath();c.moveTo(x-w*0.25,y-h*1.3);c.lineTo(x-w*0.4,y-h*1.9);c.stroke();
+  c.beginPath();c.moveTo(x+w*0.25,y-h*1.3);c.lineTo(x+w*0.4,y-h*1.9);c.stroke();
+  // eyes
+  c.fillStyle=c.strokeStyle;
+  c.fillRect(x-w*0.3,y-h*1.1,s*0.1,s*0.1);
+  c.fillRect(x+w*0.2,y-h*1.1,s*0.1,s*0.1);
+}
+
+// Type 1: Hornet — narrow waist, swept angular wings, stinger
+function drawHornet(c,x,y,s){
+  // thorax
+  c.strokeRect(x-s*0.22,y-s*0.38,s*0.44,s*0.38);
+  // abdomen — narrower
+  c.beginPath();
+  c.moveTo(x-s*0.18,y);c.lineTo(x-s*0.14,y+s*0.42);
+  c.lineTo(x+s*0.14,y+s*0.42);c.lineTo(x+s*0.18,y);
+  c.closePath();c.stroke();
+  // stinger
+  c.beginPath();c.moveTo(x-s*0.07,y+s*0.42);c.lineTo(x,y+s*0.62);c.lineTo(x+s*0.07,y+s*0.42);c.stroke();
+  // wings — angular triangles
+  c.beginPath();c.moveTo(x-s*0.22,y-s*0.1);c.lineTo(x-s*0.7,y-s*0.35);c.lineTo(x-s*0.55,y+s*0.05);c.closePath();c.stroke();
+  c.beginPath();c.moveTo(x+s*0.22,y-s*0.1);c.lineTo(x+s*0.7,y-s*0.35);c.lineTo(x+s*0.55,y+s*0.05);c.closePath();c.stroke();
+  // eyes
+  c.fillStyle=c.strokeStyle;
+  c.fillRect(x-s*0.14,y-s*0.3,s*0.09,s*0.09);
+  c.fillRect(x+s*0.05,y-s*0.3,s*0.09,s*0.09);
+}
+
+// Type 2: Crab — wide flat body, angular claws, eye stalks
+function drawCrab(c,x,y,s){
+  // body — wide flat rect
+  c.strokeRect(x-s*0.55,y-s*0.2,s*1.1,s*0.4);
+  // left claw
+  c.beginPath();c.moveTo(x-s*0.55,y-s*0.1);c.lineTo(x-s*0.85,y-s*0.32);c.lineTo(x-s*0.95,y-s*0.12);c.stroke();
+  c.beginPath();c.moveTo(x-s*0.85,y-s*0.32);c.lineTo(x-s*0.95,y-s*0.42);c.stroke();
+  // right claw
+  c.beginPath();c.moveTo(x+s*0.55,y-s*0.1);c.lineTo(x+s*0.85,y-s*0.32);c.lineTo(x+s*0.95,y-s*0.12);c.stroke();
+  c.beginPath();c.moveTo(x+s*0.85,y-s*0.32);c.lineTo(x+s*0.95,y-s*0.42);c.stroke();
+  // legs (3 per side, short)
+  [-0.1,0.05,0.2].forEach(dy=>{
+    c.beginPath();c.moveTo(x-s*0.55,y+dy*s);c.lineTo(x-s*0.75,y+(dy+0.2)*s);c.stroke();
+    c.beginPath();c.moveTo(x+s*0.55,y+dy*s);c.lineTo(x+s*0.75,y+(dy+0.2)*s);c.stroke();
+  });
+  // eye stalks + dot
+  c.beginPath();c.moveTo(x-s*0.2,y-s*0.2);c.lineTo(x-s*0.24,y-s*0.44);c.stroke();
+  c.beginPath();c.moveTo(x+s*0.2,y-s*0.2);c.lineTo(x+s*0.24,y-s*0.44);c.stroke();
+  c.fillStyle=c.strokeStyle;
+  c.fillRect(x-s*0.29,y-s*0.48,s*0.1,s*0.1);
+  c.fillRect(x+s*0.19,y-s*0.48,s*0.1,s*0.1);
+}
+
+// Type 3: Spider — octagonal body, 8 angled legs, fang tips
+function drawSpider(c,x,y,s){
+  // octagon body
+  c.beginPath();
+  for(let i=0;i<8;i++){
+    const a=i/8*Math.PI*2-Math.PI/8;
+    i===0?c.moveTo(x+Math.cos(a)*s*0.32,y+Math.sin(a)*s*0.32):c.lineTo(x+Math.cos(a)*s*0.32,y+Math.sin(a)*s*0.32);
+  }
+  c.closePath();c.stroke();
+  // 8 legs — 4 per side, bent at elbow
+  const legData=[
+    [-0.32,-0.18,-0.68,-0.42,-0.88,-0.22],
+    [-0.32,-0.05,-0.7,-0.14,-0.92,0.1],
+    [-0.32,0.1,-0.68,0.18,-0.86,0.4],
+    [-0.32,0.22,-0.6,0.36,-0.75,0.6],
+  ];
+  legData.forEach(([x1,y1,x2,y2,x3,y3])=>{
+    c.beginPath();c.moveTo(x+x1*s,y+y1*s);c.lineTo(x+x2*s,y+y2*s);c.lineTo(x+x3*s,y+y3*s);c.stroke();
+    c.beginPath();c.moveTo(x-x1*s,y+y1*s);c.lineTo(x-x2*s,y+y2*s);c.lineTo(x-x3*s,y+y3*s);c.stroke();
+  });
+  // fangs
+  c.beginPath();c.moveTo(x-s*0.1,y-s*0.32);c.lineTo(x-s*0.14,y-s*0.52);c.stroke();
+  c.beginPath();c.moveTo(x+s*0.1,y-s*0.32);c.lineTo(x+s*0.14,y-s*0.52);c.stroke();
+  // 4 eye dots
+  c.fillStyle=c.strokeStyle;
+  [-0.16,-0.06,0.06,0.16].forEach(dx=>{c.fillRect(x+dx*s-s*0.04,y-s*0.1,s*0.08,s*0.08);});
+}
+
+// Type 4: Mantis — triangular head, V-arms, narrow body
+function drawMantis(c,x,y,s){
+  // head
+  c.beginPath();c.moveTo(x,y-s*0.55);c.lineTo(x+s*0.22,y-s*0.24);c.lineTo(x-s*0.22,y-s*0.24);c.closePath();c.stroke();
+  // body
+  c.beginPath();c.moveTo(x-s*0.12,y-s*0.22);c.lineTo(x-s*0.1,y+s*0.38);c.lineTo(x+s*0.1,y+s*0.38);c.lineTo(x+s*0.12,y-s*0.22);c.closePath();c.stroke();
+  // spiked raptorial arms — V shape with spike
+  c.beginPath();c.moveTo(x-s*0.12,y-s*0.08);c.lineTo(x-s*0.48,y-s*0.38);c.lineTo(x-s*0.32,y-s*0.56);c.stroke();
+  c.beginPath();c.moveTo(x-s*0.44,y-s*0.4);c.lineTo(x-s*0.56,y-s*0.3);c.stroke();
+  c.beginPath();c.moveTo(x+s*0.12,y-s*0.08);c.lineTo(x+s*0.48,y-s*0.38);c.lineTo(x+s*0.32,y-s*0.56);c.stroke();
+  c.beginPath();c.moveTo(x+s*0.44,y-s*0.4);c.lineTo(x+s*0.56,y-s*0.3);c.stroke();
+  // small wings
+  c.beginPath();c.moveTo(x-s*0.12,y);c.lineTo(x-s*0.4,y+s*0.1);c.lineTo(x-s*0.2,y+s*0.3);c.stroke();
+  c.beginPath();c.moveTo(x+s*0.12,y);c.lineTo(x+s*0.4,y+s*0.1);c.lineTo(x+s*0.2,y+s*0.3);c.stroke();
+  // eyes
+  c.fillStyle=c.strokeStyle;
+  c.fillRect(x-s*0.12,y-s*0.46,s*0.09,s*0.09);
+  c.fillRect(x+s*0.03,y-s*0.46,s*0.09,s*0.09);
+}
+
+// Type 5: Moth boss — wide angular wings, thick body, antenna balls
+function drawMoth(c,x,y,s,t){
+  const flap=Math.sin(t*0.05)*s*0.04;
+  // upper wings — angular polygon
+  c.beginPath();
+  c.moveTo(x-s*0.1,y-s*0.1+flap);
+  c.lineTo(x-s*0.62,y-s*0.52+flap);
+  c.lineTo(x-s*0.78,y-s*0.1);
+  c.lineTo(x-s*0.52,y+s*0.18);
+  c.lineTo(x-s*0.12,y+s*0.06);
+  c.closePath();c.stroke();
+  c.beginPath();
+  c.moveTo(x+s*0.1,y-s*0.1+flap);
+  c.lineTo(x+s*0.62,y-s*0.52+flap);
+  c.lineTo(x+s*0.78,y-s*0.1);
+  c.lineTo(x+s*0.52,y+s*0.18);
+  c.lineTo(x+s*0.12,y+s*0.06);
+  c.closePath();c.stroke();
+  // lower wings — smaller triangles
+  c.beginPath();c.moveTo(x-s*0.12,y+s*0.06);c.lineTo(x-s*0.44,y+s*0.14);c.lineTo(x-s*0.3,y+s*0.48);c.lineTo(x-s*0.1,y+s*0.38);c.closePath();c.stroke();
+  c.beginPath();c.moveTo(x+s*0.12,y+s*0.06);c.lineTo(x+s*0.44,y+s*0.14);c.lineTo(x+s*0.3,y+s*0.48);c.lineTo(x+s*0.1,y+s*0.38);c.closePath();c.stroke();
+  // body rect
+  c.strokeRect(x-s*0.1,y-s*0.28,s*0.2,s*0.68);
+  // antenna + ball
+  c.beginPath();c.moveTo(x-s*0.06,y-s*0.28);c.lineTo(x-s*0.22,y-s*0.62);c.stroke();
+  c.beginPath();c.moveTo(x+s*0.06,y-s*0.28);c.lineTo(x+s*0.22,y-s*0.62);c.stroke();
+  c.fillStyle=c.strokeStyle;
+  c.fillRect(x-s*0.26,y-s*0.66,s*0.09,s*0.09);
+  c.fillRect(x+s*0.17,y-s*0.66,s*0.09,s*0.09);
+  // wing spot squares
+  c.fillRect(x-s*0.46,y-s*0.2,s*0.1,s*0.1);
+  c.fillRect(x+s*0.36,y-s*0.2,s*0.1,s*0.1);
+}
+
+const ENEMY_DRAWS=[drawWorker,drawHornet,drawCrab,drawSpider,drawMantis,drawMoth];
+
+// ── Simple player ship (original style) ──
+function drawPlayer(x,y){
+  ctx.strokeStyle='#fff';ctx.lineWidth=1.5*R;
+  const w=PLAYER_W,h=PLAYER_H;
+  ctx.beginPath();
+  ctx.moveTo(x,y-h/2);
+  ctx.lineTo(x+w/2,y+h/2);
+  ctx.lineTo(x+w*0.15,y+h*0.3);
+  ctx.lineTo(x-w*0.15,y+h*0.3);
+  ctx.lineTo(x-w/2,y+h/2);
+  ctx.closePath();ctx.stroke();
+  ctx.beginPath();ctx.arc(x,y-h*0.05,h*0.13,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();
+}
+
+// ── Game ──
 function initGame(){
-  player={x:W/2,y:H-90,speed:4*R,w:PLAYER_W,h:PLAYER_H};
+  player={x:W/2,y:H-80,speed:IS_RETINA?5:3.5,w:PLAYER_W,h:PLAYER_H};
   bullets=[];enemyBullets=[];particles=[];
   waveClearing=false;
   computeWaveParams();spawnEnemies();
@@ -425,12 +300,11 @@ function spawnEnemies(){
   enemies=[];formDescentOffset=0;descentFrame=0;
   const cols=8+Math.min(wave-1,4);
   const rows=3+Math.min(Math.floor((wave-1)/2),3);
-  const spacing=IS_RETINA?68:46;
+  const spacing=IS_RETINA?66:44;
   const offX=(W-(cols-1)*spacing)/2;
-  const offY=IS_RETINA?105:76;
+  const offY=IS_RETINA?100:72;
   for(let r=0;r<rows;r++){
     for(let c=0;c<cols;c++){
-      // Row 0=moths(boss), row1=mantis, row2=crab, row3=spider, row4=hornet, rest=beetle
       const typeMap=[5,4,2,3,1,0];
       const type=typeMap[Math.min(r,typeMap.length-1)];
       enemies.push({
@@ -440,7 +314,7 @@ function spawnEnemies(){
         diving:false,diveAngle:0,diveSpeed:0,
         shootTimer:waveShootMin+Math.random()*D.shootRnd+(r+c)*18,
         phase:Math.random()*Math.PI*2,
-        alive:true,animT:Math.random()*1000
+        alive:true,animT:Math.random()*200
       });
     }
   }
@@ -465,7 +339,7 @@ function updateEnemies(t){
       e.shootTimer--;
       if(e.shootTimer<=0){
         e.shootTimer=waveShootMin+Math.random()*D.shootRnd;
-        enemyBullets.push({x:e.x,y:e.y+ENEMY_SIZE*0.6,vy:waveBulletSpd});
+        enemyBullets.push({x:e.x,y:e.y+ES*0.6,vy:waveBulletSpd});
       }
     } else {
       e.x+=Math.cos(e.diveAngle)*e.diveSpeed;
@@ -485,10 +359,10 @@ function updateBullets(){
   enemyBullets.forEach(b=>b.y+=b.vy);
 }
 
-function spawnParticles(x,y,n=8){
+function spawnParticles(x,y,n=7){
   for(let i=0;i<n;i++){
-    const a=Math.random()*Math.PI*2,sp=1+Math.random()*3;
-    particles.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:1,decay:0.035+Math.random()*0.03});
+    const a=Math.random()*Math.PI*2,sp=1+Math.random()*2.5;
+    particles.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:1,decay:0.045+Math.random()*0.03});
   }
 }
 
@@ -496,34 +370,34 @@ function checkCollisions(){
   bullets.forEach(b=>{
     enemies.forEach(e=>{
       if(!e.alive)return;
-      if(Math.abs(b.x-e.x)<ENEMY_SIZE*0.5&&Math.abs(b.y-e.y)<ENEMY_SIZE*0.5){
+      if(Math.abs(b.x-e.x)<ES*0.55&&Math.abs(b.y-e.y)<ES*0.55){
         b.dead=true;e.hp--;
         if(e.hp<=0){
           e.alive=false;
           score+=(e.type===5?300:e.type===4?200:e.type===3?180:e.type===2?160:e.type===1?130:100);
-          spawnParticles(e.x,e.y,12);updateHUD();
+          spawnParticles(e.x,e.y,10);updateHUD();
         }
       }
     });
   });
   bullets=bullets.filter(b=>!b.dead);
   enemyBullets.forEach(b=>{
-    if(Math.abs(b.x-player.x)<player.w*0.38&&Math.abs(b.y-player.y)<player.h*0.38){b.dead=true;hitPlayer();}
+    if(Math.abs(b.x-player.x)<player.w*0.4&&Math.abs(b.y-player.y)<player.h*0.4){b.dead=true;hitPlayer();}
   });
   enemyBullets=enemyBullets.filter(b=>!b.dead);
   enemies.forEach(e=>{
     if(!e.alive||!e.diving)return;
-    if(Math.abs(e.x-player.x)<(player.w+ENEMY_SIZE)*0.36&&Math.abs(e.y-player.y)<(player.h+ENEMY_SIZE)*0.36){
+    if(Math.abs(e.x-player.x)<(player.w+ES)*0.38&&Math.abs(e.y-player.y)<(player.h+ES)*0.38){
       e.alive=false;spawnParticles(e.x,e.y,10);hitPlayer();
     }
   });
-  enemies.forEach(e=>{if(e.alive&&e.y>H-player.h*2){e.alive=false;spawnParticles(e.x,e.y,6);}});
+  enemies.forEach(e=>{if(e.alive&&e.y>H-player.h*2){e.alive=false;spawnParticles(e.x,e.y,5);}});
 }
 
 function hitPlayer(){
   if(playerHitCooldown>0)return;
   lives--;playerHitCooldown=120;
-  spawnParticles(player.x,player.y,18);updateHUD();
+  spawnParticles(player.x,player.y,16);updateHUD();
   if(lives<=0)setTimeout(()=>showScreen('over'),400);
 }
 
@@ -538,63 +412,61 @@ function updateHUD(){
   const lv=document.getElementById('lives-val');lv.innerHTML='';
   for(let i=0;i<lives;i++){
     const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
-    svg.setAttribute('width','14');svg.setAttribute('height','16');svg.setAttribute('viewBox','0 0 32 38');svg.style.opacity='0.7';
+    svg.setAttribute('width','14');svg.setAttribute('height','14');svg.setAttribute('viewBox','0 0 30 30');svg.style.opacity='0.7';
     const p=document.createElementNS('http://www.w3.org/2000/svg','polygon');
-    p.setAttribute('points','16,2 20,10 28,12 22,18 24,28 16,22 8,28 10,18 4,12 12,10');
-    p.setAttribute('fill','none');p.setAttribute('stroke','#fff');p.setAttribute('stroke-width','2');
+    p.setAttribute('points','15,2 28,26 16,20 14,20 2,26');p.setAttribute('fill','none');p.setAttribute('stroke','#fff');p.setAttribute('stroke-width','2');
     svg.appendChild(p);lv.appendChild(svg);
   }
 }
 
 function draw(t){
   ctx.clearRect(0,0,W,H);
-  // Stars
-  for(let i=0;i<(IS_RETINA?130:88);i++){
-    const sx=Math.abs((Math.sin(i*127.1)*43758.5453)%1)*W;
-    const sy=Math.abs((Math.sin(i*311.7)*43758.5453)%1)*H;
-    const ss=(Math.sin(i*91.3)*0.5+0.5)*1.8+0.3;
-    ctx.globalAlpha=(Math.sin(t*0.001+i)*0.3+0.5)*0.55;
-    ctx.fillStyle='#fff';ctx.fillRect(sx,sy,ss,ss);
+  // Stars — no fillStyle calls in loop body except once
+  ctx.fillStyle='#fff';
+  for(let i=0;i<(IS_RETINA?100:68);i++){
+    const sx=Math.abs((Math.sin(i*127.1)*43758.5)%1)*W;
+    const sy=Math.abs((Math.sin(i*311.7)*43758.5)%1)*H;
+    const ss=((Math.sin(i*91.3)*0.5+0.5)*1.4+0.3);
+    ctx.globalAlpha=(Math.sin(t*0.001+i)*0.3+0.5)*0.5;
+    ctx.fillRect(sx,sy,ss,ss);
   }
   ctx.globalAlpha=1;
 
   // Particles
-  particles.forEach(p=>{ctx.globalAlpha=p.life*0.85;ctx.fillStyle='#fff';ctx.fillRect(p.x-1,p.y-1,2,2);});
+  ctx.fillStyle='#fff';
+  particles.forEach(p=>{ctx.globalAlpha=p.life*0.8;ctx.fillRect(p.x-1,p.y-1,2,2);});
   ctx.globalAlpha=1;
 
-  // Enemies
+  // Enemies — no gradients, just strokes
   enemies.forEach(e=>{
     if(!e.alive)return;
-    const bri=e.hp>2?1:e.hp>1?0.85:0.65;
-    const col=`rgba(255,255,255,${bri})`;
+    const bri=e.hp>2?1:e.hp>1?0.8:0.6;
     ctx.save();
-    ctx.shadowBlur=e.hp>1?14:5;
-    ctx.shadowColor=`rgba(255,255,255,${bri*0.7})`;
-    ctx.globalAlpha=bri;
-    ENEMY_DRAWS[e.type](ctx,e.x,e.y,ENEMY_SIZE,col,e.animT);
+    ctx.strokeStyle=`rgba(255,255,255,${bri})`;
+    ctx.lineWidth=1*R;
+    ctx.shadowBlur=e.hp>1?8:3;
+    ctx.shadowColor=`rgba(255,255,255,${bri*0.6})`;
+    ENEMY_DRAWS[e.type](ctx,e.x,e.y,ES,e.animT);
     ctx.restore();
-    ctx.globalAlpha=1;
   });
 
-  // Player bullets
-  bullets.forEach(b=>{
-    ctx.fillStyle='#fff';ctx.shadowBlur=10;ctx.shadowColor='rgba(255,255,255,0.9)';
-    ctx.fillRect(b.x-BULLET_W/2,b.y-BULLET_H/2,BULLET_W,BULLET_H);
-  });
+  // Player bullets — thin single pixel line
+  ctx.fillStyle='#fff';
+  ctx.shadowBlur=6;ctx.shadowColor='rgba(255,255,255,0.8)';
+  bullets.forEach(b=>ctx.fillRect(b.x-BW/2,b.y-BH/2,BW,BH));
   ctx.shadowBlur=0;
 
-  // Enemy bullets — slightly different shape (wider)
-  enemyBullets.forEach(b=>{
-    ctx.fillStyle='rgba(210,210,210,0.85)';ctx.shadowBlur=5;ctx.shadowColor='rgba(255,255,255,0.4)';
-    ctx.fillRect(b.x-BULLET_W*0.8,b.y,BULLET_W*1.6,BULLET_H*0.65);
-  });
+  // Enemy bullets — slightly wider but still thin
+  ctx.fillStyle='rgba(200,200,200,0.9)';
+  ctx.shadowBlur=3;ctx.shadowColor='rgba(255,255,255,0.3)';
+  enemyBullets.forEach(b=>ctx.fillRect(b.x-BW,b.y,BW*2,BH*0.8));
   ctx.shadowBlur=0;
 
   // Player
   const flicker=playerHitCooldown>0&&Math.floor(playerHitCooldown/7)%2===0;
   if(!flicker){
-    ctx.shadowBlur=16;ctx.shadowColor='rgba(255,255,255,0.45)';
-    drawPlayer(player.x,player.y,1,t);
+    ctx.shadowBlur=10;ctx.shadowColor='rgba(255,255,255,0.4)';
+    drawPlayer(player.x,player.y);
     ctx.shadowBlur=0;
   }
 }
@@ -622,11 +494,9 @@ function showScreen(s){
 
 function startGame(){
   D=DIFF[difficulty];score=0;wave=1;lives=D.lives;
-  formX=0;formDir=1;descentFrame=0;formDescentOffset=0;
-  playerHitCooldown=0;
+  formX=0;formDir=1;descentFrame=0;formDescentOffset=0;playerHitCooldown=0;
   updateHUD();initGame();showScreen('play');
 }
-
 function nextWave(){
   wave++;formX=0;formDir=1;descentFrame=0;formDescentOffset=0;
   bullets=[];enemyBullets=[];particles=[];waveClearing=false;

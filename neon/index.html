@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NEON GAMES</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#000;color:#fff;font-family:'Courier New',monospace;min-height:100vh;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+#canvas-bg{position:fixed;inset:0;z-index:0;}
+.content{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;gap:48px;}
+h1{
+  font-size:1.4rem;letter-spacing:0.7em;color:#ff4400;font-weight:200;
+  text-shadow:0 0 20px #ff4400,0 0 60px #ff220066,0 0 120px #ff110033;
+}
+.tagline{font-size:0.58rem;letter-spacing:0.3em;color:#441100;margin-top:-36px;}
+.games{display:flex;gap:28px;flex-wrap:wrap;justify-content:center;padding:0 20px;}
+.game-card{
+  width:240px;padding:30px 22px;border:1px solid #220800;
+  background:transparent;cursor:pointer;text-align:center;
+  transition:all 0.35s;text-decoration:none;display:block;
+  position:relative;
+}
+.game-card::before{
+  content:'';position:absolute;inset:0;
+  background:radial-gradient(circle at 50% 50%, rgba(255,60,0,0.04), transparent 70%);
+  opacity:0;transition:opacity 0.35s;
+}
+.game-card:hover{border-color:#ff4400;box-shadow:0 0 30px #ff220022,inset 0 0 30px #ff110011;}
+.game-card:hover::before{opacity:1;}
+.game-card .icon{font-size:1.6rem;margin-bottom:16px;color:#ff4400;text-shadow:0 0 16px #ff4400,0 0 40px #ff220066;}
+.game-card .title{font-size:0.82rem;letter-spacing:0.3em;color:#cc3300;margin-bottom:8px;text-transform:uppercase;transition:all 0.3s;}
+.game-card:hover .title{color:#ff4400;text-shadow:0 0 12px #ff4400;}
+.game-card .desc{font-size:0.52rem;letter-spacing:0.1em;color:#331100;line-height:1.9;}
+.back{position:fixed;top:18px;left:22px;font-size:0.58rem;letter-spacing:0.2em;color:#331100;text-decoration:none;transition:color 0.3s;text-transform:uppercase;}
+.back:hover{color:#ff4400;}
+@media (-webkit-min-device-pixel-ratio:2),(min-resolution:192dpi){
+  h1{font-size:1.8rem;}
+  .tagline{font-size:0.72rem;}
+  .game-card{width:280px;}
+  .game-card .title{font-size:0.98rem;}
+  .game-card .desc{font-size:0.65rem;}
+}
+</style>
+</head>
+<body>
+<canvas id="canvas-bg"></canvas>
+<a class="back" href="../">&#8592; MONO GAMES</a>
+<div class="content">
+  <h1>NEON GAMES</h1>
+  <p class="tagline">FIRE &middot; GLOW &middot; DESTROY</p>
+  <div class="games">
+    <a class="game-card" href="galaxy/">
+      <div class="icon">&#9651;</div>
+      <div class="title">Galaga</div>
+      <div class="desc">Geometric invaders.<br>Neon orange bloom.<br>Survive the swarm.</div>
+    </a>
+    <div class="game-card" style="cursor:default;border-color:#110400;">
+      <div class="icon" style="opacity:0.3">&#11044;&#9675;</div>
+      <div class="title" style="color:#221100">Void &amp; Light</div>
+      <div class="desc" style="color:#1a0800">Neon version<br>coming soon.</div>
+    </div>
+  </div>
+</div>
+<script>
+const cv=document.getElementById('canvas-bg'),ctx=cv.getContext('2d');
+function resize(){cv.width=innerWidth;cv.height=innerHeight;}resize();
+window.addEventListener('resize',resize);
+// Ambient particle field
+const pts=Array.from({length:60},()=>({
+  x:Math.random()*innerWidth,y:Math.random()*innerHeight,
+  vx:(Math.random()-0.5)*0.3,vy:(Math.random()-0.5)*0.3,
+  r:Math.random()*1.5+0.3,life:Math.random()
+}));
+function loop(t){
+  ctx.fillStyle='rgba(0,0,0,0.18)';
+  ctx.fillRect(0,0,cv.width,cv.height);
+  pts.forEach(p=>{
+    p.x+=p.vx;p.y+=p.vy;
+    if(p.x<0)p.x=cv.width;if(p.x>cv.width)p.x=0;
+    if(p.y<0)p.y=cv.height;if(p.y>cv.height)p.y=0;
+    p.life=(p.life+0.004)%1;
+    const a=Math.sin(p.life*Math.PI)*0.6;
+    ctx.save();
+    ctx.globalAlpha=a;
+    ctx.fillStyle='#ff4400';
+    ctx.shadowBlur=12;ctx.shadowColor='#ff4400';
+    ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+  });
+  requestAnimationFrame(loop);
+}
+loop(0);
+</script>
+</body>
+</html>

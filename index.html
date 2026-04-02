@@ -9,10 +9,10 @@
   body{background:#0a0a0a;color:#fff;font-family:'Courier New',monospace;min-height:100vh;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;}
   #noise{position:fixed;inset:0;pointer-events:none;z-index:999;opacity:0.15;}
   h1{font-size:1.4rem;letter-spacing:0.6em;color:#555;font-weight:200;margin-bottom:6px;}
-  .tagline{font-size:0.6rem;letter-spacing:0.3em;opacity:0.2;margin-bottom:60px;}
-  .games{display:flex;gap:32px;flex-wrap:wrap;justify-content:center;padding:0 20px;}
+  .tagline{font-size:0.6rem;letter-spacing:0.3em;opacity:0.2;margin-bottom:50px;}
+  .games{display:flex;gap:24px;flex-wrap:wrap;justify-content:center;padding:0 20px;}
   .game-card{
-    width:240px;padding:30px 22px;border:1px solid #1e1e1e;
+    width:220px;padding:26px 20px;border:1px solid #1e1e1e;
     background:transparent;cursor:pointer;text-align:center;
     transition:all 0.3s;text-decoration:none;display:block;
     position:relative;overflow:hidden;
@@ -24,15 +24,23 @@
   }
   .game-card:hover{border-color:#444;}
   .game-card:hover::before{opacity:1;}
-  .game-card .icon{font-size:1.8rem;margin-bottom:18px;opacity:0.65;}
-  .game-card .title{font-size:0.85rem;letter-spacing:0.3em;color:#aaa;margin-bottom:8px;text-transform:uppercase;}
-  .game-card .desc{font-size:0.55rem;letter-spacing:0.1em;opacity:0.28;line-height:1.9;}
+  .game-card .icon{font-size:1.6rem;margin-bottom:14px;opacity:0.65;}
+  .game-card .title{font-size:0.82rem;letter-spacing:0.3em;color:#aaa;margin-bottom:6px;text-transform:uppercase;}
+  .game-card .desc{font-size:0.52rem;letter-spacing:0.1em;opacity:0.28;line-height:1.9;}
+  /* Neon card special style */
+  .neon-card{border-color:#1a0800;}
+  .neon-card .icon{color:#ff4400;text-shadow:0 0 12px #ff4400;opacity:1;}
+  .neon-card .title{color:#883300;}
+  .neon-card .desc{color:#441100;opacity:1;}
+  .neon-card:hover{border-color:#ff4400;box-shadow:0 0 24px #ff220022;}
+  .neon-card:hover .title{color:#ff4400;text-shadow:0 0 10px #ff4400;}
+  .divider{width:1px;height:120px;background:linear-gradient(to bottom,transparent,#222,transparent);align-self:center;}
   @media (-webkit-min-device-pixel-ratio:2),(min-resolution:192dpi){
     h1{font-size:1.8rem;}
     .tagline{font-size:0.75rem;}
-    .game-card{width:280px;}
+    .game-card{width:260px;}
     .game-card .title{font-size:1rem;}
-    .game-card .desc{font-size:0.68rem;}
+    .game-card .desc{font-size:0.65rem;}
   }
 </style>
 </head>
@@ -44,12 +52,18 @@
   <a class="game-card" href="void-and-light/">
     <div class="icon">&#11044;&#11044;&#9675;</div>
     <div class="title">Void &amp; Light</div>
-    <div class="desc">Two forces battle<br>for the color spectrum.<br>Claim. Reinforce. Conquer.</div>
+    <div class="desc">Two forces battle<br>for the spectrum.<br>Claim. Reinforce. Conquer.</div>
   </a>
   <a class="game-card" href="galaxy/">
     <div class="icon">&#10022;</div>
     <div class="title">Galaga Mono</div>
-    <div class="desc">Geometric invaders descend.<br>One ship. Infinite formations.<br>Survive the dark.</div>
+    <div class="desc">Geometric invaders.<br>One ship. Infinite waves.<br>Survive the dark.</div>
+  </a>
+  <div class="divider"></div>
+  <a class="game-card neon-card" href="neon/">
+    <div class="icon">&#9651;</div>
+    <div class="title">Neon Games</div>
+    <div class="desc">Same games.<br>Orange bloom. Dark fire.<br>A different dimension.</div>
   </a>
 </div>
 <script>

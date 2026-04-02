@@ -75,14 +75,12 @@ body{background:#0a0a0a;color:#fff;font-family:'Courier New',monospace;overflow:
 </div>
 
 <script>
-// ── Noise ──
 const nc=document.getElementById('noise'),nctx=nc.getContext('2d');
 function rn(){nc.width=innerWidth;nc.height=innerHeight;}
 rn();window.addEventListener('resize',()=>{rn();resize();});
 function dn(){const img=nctx.createImageData(nc.width,nc.height);for(let i=0;i<img.data.length;i+=4){const v=Math.random()*255|0;img.data[i]=img.data[i+1]=img.data[i+2]=v;img.data[i+3]=255;}nctx.putImageData(img,0,0);}
 setInterval(dn,80);
 
-// ── Canvas ──
 const cv=document.getElementById('canvas'),ctx=cv.getContext('2d');
 let W,H;
 function resize(){W=cv.width=innerWidth;H=cv.height=innerHeight;}
@@ -92,19 +90,17 @@ const IS_RETINA=window.devicePixelRatio>=2;
 const PLAYER_W=IS_RETINA?44:30;
 const PLAYER_H=IS_RETINA?36:24;
 
-// Bullets — thin needles
-const BULLET_W=IS_RETINA?1.5:1;
-const BULLET_H=IS_RETINA?10:7;
-const EBULLET_W=IS_RETINA?1.5:1;
-const EBULLET_H=IS_RETINA?8:6;
+// Bullets — ultra thin
+const BULLET_W=IS_RETINA?1:0.8;
+const BULLET_H=IS_RETINA?7:5;
+const EBULLET_W=IS_RETINA?1:0.8;
+const EBULLET_H=IS_RETINA?6:4;
 
-// Enemy size/spacing (1.4x smaller than original)
 const ENEMY_SIZE=IS_RETINA?27:19;
 const SPACING=IS_RETINA?50:34;
 const BASE_COLS=11;
 const BASE_ROWS=4;
 
-// ── Difficulty presets ──
 const DIFF={
   easy:{shootMin:300,shootRnd:400,bulletSpd:IS_RETINA?2.2:1.6,diveChance:0.00012,descentPx:28,formSpeed:0.28,waveShootBonus:20,waveBulletBonus:0.08,lives:5},
   normal:{shootMin:180,shootRnd:220,bulletSpd:IS_RETINA?3.2:2.2,diveChance:0.00022,descentPx:36,formSpeed:0.35,waveShootBonus:12,waveBulletBonus:0.12,lives:3},
@@ -137,7 +133,6 @@ const FORM_RANGE=IS_RETINA?55:36;
 const DESCENT_FRAMES=480;
 let descentFrame=0;
 
-// ── Enemy designs ──
 const ENEMY_DRAWS=[
   (c,x,y,s)=>{c.lineWidth=1;c.beginPath();c.moveTo(x,y-s*0.45);c.lineTo(x+s*0.42,y+s*0.35);c.lineTo(x-s*0.42,y+s*0.35);c.closePath();c.stroke();c.beginPath();c.arc(x,y,s*0.12,0,Math.PI*2);c.fillStyle=c.strokeStyle;c.fill();},
   (c,x,y,s)=>{c.lineWidth=1;c.beginPath();c.moveTo(x,y-s*0.45);c.lineTo(x+s*0.32,y);c.lineTo(x,y+s*0.45);c.lineTo(x-s*0.32,y);c.closePath();c.stroke();},
@@ -148,7 +143,7 @@ const ENEMY_DRAWS=[
 ];
 
 function drawPlayer(x,y){
-  ctx.strokeStyle='#fff';ctx.fillStyle='transparent';ctx.lineWidth=1.5;
+  ctx.strokeStyle='#fff';ctx.lineWidth=1.5;
   const w=PLAYER_W,h=PLAYER_H;
   ctx.beginPath();
   ctx.moveTo(x,y-h/2);ctx.lineTo(x+w/2,y+h/2);
@@ -261,7 +256,6 @@ function updateHUD(){
 
 function draw(t){
   ctx.clearRect(0,0,W,H);
-  // Stars
   for(let i=0;i<(IS_RETINA?120:80);i++){
     const sx=Math.abs((Math.sin(i*127.1)*43758.5453)%1)*W;
     const sy=Math.abs((Math.sin(i*311.7)*43758.5453)%1)*H;
@@ -270,25 +264,22 @@ function draw(t){
     ctx.fillStyle='#fff';ctx.fillRect(sx,sy,ss,ss);
   }
   ctx.globalAlpha=1;
-  // Particles
   particles.forEach(p=>{ctx.globalAlpha=p.life*0.8;ctx.fillStyle='#fff';ctx.fillRect(p.x-1,p.y-1,2,2);});
   ctx.globalAlpha=1;
-  // Enemies
   enemies.forEach(e=>{
     if(!e.alive)return;
     const bri=e.hp>1?1:0.75;
     ctx.save();ctx.strokeStyle=`rgba(255,255,255,${bri})`;ctx.shadowBlur=e.hp>1?8:3;ctx.shadowColor='rgba(255,255,255,0.6)';
     ENEMY_DRAWS[e.type](ctx,e.x,e.y,ENEMY_SIZE);ctx.restore();
   });
-  // Player bullets — thin needle, bright core
-  ctx.fillStyle='#fff';ctx.shadowBlur=5;ctx.shadowColor='rgba(255,255,255,0.7)';
+  // Player bullets
+  ctx.fillStyle='#fff';ctx.shadowBlur=4;ctx.shadowColor='rgba(255,255,255,0.6)';
   bullets.forEach(b=>ctx.fillRect(b.x-BULLET_W/2,b.y-BULLET_H/2,BULLET_W,BULLET_H));
   ctx.shadowBlur=0;
-  // Enemy bullets — slightly dimmer needle
-  ctx.fillStyle='rgba(200,200,200,0.75)';ctx.shadowBlur=3;ctx.shadowColor='rgba(255,255,255,0.3)';
+  // Enemy bullets
+  ctx.fillStyle='rgba(200,200,200,0.7)';ctx.shadowBlur=2;ctx.shadowColor='rgba(255,255,255,0.25)';
   enemyBullets.forEach(b=>ctx.fillRect(b.x-EBULLET_W/2,b.y,EBULLET_W,EBULLET_H));
   ctx.shadowBlur=0;
-  // Player
   const flicker=playerHitCooldown>0&&Math.floor(playerHitCooldown/8)%2===0;
   if(!flicker){ctx.shadowBlur=12;ctx.shadowColor='rgba(255,255,255,0.5)';drawPlayer(player.x,player.y);ctx.shadowBlur=0;}
 }

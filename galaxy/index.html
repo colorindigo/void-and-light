@@ -91,55 +91,96 @@ const ENEMY_SIZE=IS_RETINA?27:19,SPACING=IS_RETINA?50:34;
 const BASE_COLS=11,BASE_ROWS=4;
 
 // ══════════════════════════════════
-// ── WEB AUDIO ENGINE ──
+// ── MUSIC SYSTEM ──
+// ══════════════════════════════════
+const MUSIC_FILES={
+  menu:'main menu.wav',
+  stage1:'stage I.mp3',
+  stage2:'stage II.mp3'
+};
+const MUSIC_VOL={menu:0.22,stage:0.18};
+const FADE_IN=2.5,FADE_OUT=1.5;
+
+let musicBuffers={};
+let currentTrack=null;   // {source, gain, name}
+let musicLoaded=false;
+
+function loadAllMusic(){
+  if(musicLoaded)return Promise.resolve();
+  const keys=Object.keys(MUSIC_FILES);
+  return Promise.all(keys.map(k=>
+    fetch(MUSIC_FILES[k])
+      .then(r=>{if(!r.ok)throw new Error(k+' not found');return r.arrayBuffer();})
+      .then(buf=>AC.decodeAudioData(buf))
+      .then(decoded=>{musicBuffers[k]=decoded;})
+      .catch(e=>console.warn('Music load fail:',k,e.message))
+  )).then(()=>{musicLoaded=true;});
+}
+
+function playTrack(name,vol){
+  if(!AC||!musicBuffers[name])return;
+  const src=AC.createBufferSource();
+  const gain=AC.createGain();
+  src.buffer=musicBuffers[name];
+  src.loop=true;
+  gain.gain.setValueAtTime(0,AC.currentTime);
+  gain.gain.linearRampToValueAtTime(vol,AC.currentTime+FADE_IN);
+  src.connect(gain);
+  gain.connect(AC.destination);
+  src.start(0);
+  currentTrack={source:src,gain:gain,name:name};
+}
+
+function stopCurrentTrack(){
+  return new Promise(resolve=>{
+    if(!currentTrack||!AC){resolve();return;}
+    const t=AC.currentTime;
+    const g=currentTrack.gain;
+    const s=currentTrack.source;
+    g.gain.cancelScheduledValues(t);
+    g.gain.setValueAtTime(g.gain.value,t);
+    g.gain.linearRampToValueAtTime(0,t+FADE_OUT);
+    const ref=currentTrack;
+    currentTrack=null;
+    setTimeout(()=>{try{ref.source.stop();}catch(e){}resolve();},FADE_OUT*1000+100);
+  });
+}
+
+function crossfadeTo(name,vol){
+  if(currentTrack&&currentTrack.name===name)return;
+  stopCurrentTrack().then(()=>playTrack(name,vol));
+}
+
+function getStageTrack(waveNum){
+  // wave 1 = stage1, wave 2 = stage2, then alternate
+  return (waveNum%2===1)?'stage1':'stage2';
+}
+
+function playMenuMusic(){
+  if(!AC)return;
+  loadAllMusic().then(()=>crossfadeTo('menu',MUSIC_VOL.menu));
+}
+
+function playStageMusic(waveNum){
+  if(!AC)return;
+  const track=getStageTrack(waveNum);
+  crossfadeTo(track,MUSIC_VOL.stage);
+}
+
+function stopMusic(){
+  stopCurrentTrack();
+}
+
+// ══════════════════════════════════
+// ── WEB AUDIO ENGINE (SFX) ──
 // ══════════════════════════════════
 let AC=null;
-
-// ── Background Music (mp3) ──
-let bgMusic=null;
-let bgMusicGain=null;
 
 function initAudio(){
   if(AC)return;
   AC=new(window.AudioContext||window.webkitAudioContext)();
   startAmbient();
-}
-
-function startBGMusic(){
-  if(!AC||bgMusic)return;
-  bgMusicGain=AC.createGain();
-  bgMusicGain.gain.setValueAtTime(0,AC.currentTime);
-  bgMusicGain.gain.linearRampToValueAtTime(0.18,AC.currentTime+3);
-  bgMusicGain.connect(AC.destination);
-
-  fetch('Space Telescope (Full Version).mp3')
-    .then(r=>{if(!r.ok)throw new Error('Music file not found');return r.arrayBuffer();})
-    .then(buf=>AC.decodeAudioData(buf))
-    .then(decoded=>{
-      bgMusic=AC.createBufferSource();
-      bgMusic.buffer=decoded;
-      bgMusic.loop=true;
-      bgMusic.connect(bgMusicGain);
-      bgMusic.start(0);
-    })
-    .catch(e=>console.warn('BG music not loaded:',e.message));
-}
-
-function stopBGMusic(){
-  if(!bgMusicGain||!bgMusic)return;
-  const t=AC.currentTime;
-  bgMusicGain.gain.cancelScheduledValues(t);
-  bgMusicGain.gain.setValueAtTime(bgMusicGain.gain.value,t);
-  bgMusicGain.gain.linearRampToValueAtTime(0,t+1.5);
-  setTimeout(()=>{
-    try{bgMusic.stop();}catch(e){}
-    bgMusic=null;bgMusicGain=null;
-  },2000);
-}
-
-function resumeBGMusic(){
-  if(bgMusic)return;
-  startBGMusic();
+  playMenuMusic();
 }
 
 function startAmbient(){
@@ -373,7 +414,7 @@ function checkCollisions(){
 function hitPlayer(){
   if(playerHitCooldown>0)return;
   lives--;playerHitCooldown=120;spawnParticles(player.x,player.y,16);sndExplode();updateHUD();
-  if(lives<=0){stopBGMusic();setTimeout(()=>showScreen('over'),400);}
+  if(lives<=0){stopMusic();setTimeout(()=>showScreen('over'),400);}
 }
 
 function updateParticles(){
@@ -436,19 +477,27 @@ function showScreen(s){
 
 function startGame(){
   initAudio();
-  startBGMusic();
   D=DIFF[difficulty];score=0;wave=1;lives=D.lives;
   formX=0;formDir=1;descentFrame=0;formDescentOffset=0;playerHitCooldown=0;
-  updateHUD();initGame();showScreen('play');
+  updateHUD();initGame();
+  playStageMusic(wave);
+  showScreen('play');
 }
 function nextWave(){
   wave++;formX=0;formDir=1;descentFrame=0;formDescentOffset=0;
   bullets=[];enemyBullets=[];particles=[];waveClearing=false;
-  computeWaveParams();updateHUD();spawnEnemies();showScreen('play');
+  computeWaveParams();updateHUD();spawnEnemies();
+  playStageMusic(wave);
+  showScreen('play');
 }
 
 document.getElementById('start-btn').onclick=startGame;
-document.getElementById('retry-btn').onclick=()=>{stopBGMusic();document.getElementById('over-screen').style.display='none';document.getElementById('start-screen').style.display='flex';};
+document.getElementById('retry-btn').onclick=()=>{
+  stopMusic();
+  document.getElementById('over-screen').style.display='none';
+  document.getElementById('start-screen').style.display='flex';
+  playMenuMusic();
+};
 document.getElementById('next-btn').onclick=nextWave;
 
 window.addEventListener('keydown',e=>{keys[e.key]=true;if(e.key===' ')e.preventDefault();});

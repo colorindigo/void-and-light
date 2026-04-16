@@ -90,29 +90,28 @@ const EBULLET_W=IS_RETINA?1:0.8,EBULLET_H=IS_RETINA?6:4;
 const ENEMY_SIZE=IS_RETINA?27:19,SPACING=IS_RETINA?50:34;
 const BASE_COLS=11,BASE_ROWS=4;
 
-// ══════════════════════════════════
+// ═══════════════════════════════
 // ── AUDIO CONTEXT ──
-// ══════════════════════════════════
+// ═══════════════════════════════
 let AC=null;
 function ensureAudio(){
   if(AC)return;
-  try{
-    AC=new(window.AudioContext||window.webkitAudioContext)();
-    if(AC.state==='suspended')AC.resume();
-  }catch(e){}
+  try{AC=new(window.AudioContext||window.webkitAudioContext)();if(AC.state==='suspended')AC.resume();}catch(e){}
 }
 
-// ══════════════════════════════════
-// ── MENU MUSIC (HTML Audio) ──
-// ══════════════════════════════════
+// ═══════════════════════════════
+// ── MENU MUSIC (HTML Audio — auto-start) ──
+// ═══════════════════════════════
 const menuAudio=new Audio('main menu.wav');
 menuAudio.loop=true;menuAudio.volume=0;
 let menuFadeInterval=null,menuPlaying=false;
 
 function fadeMenuIn(){
+  if(menuPlaying)return;
   menuAudio.volume=0;
-  menuAudio.play().catch(()=>{});
   menuPlaying=true;
+  const playPromise=menuAudio.play();
+  if(playPromise){playPromise.catch(()=>{menuPlaying=false;});}
   clearInterval(menuFadeInterval);
   menuFadeInterval=setInterval(()=>{
     if(menuAudio.volume<0.25){menuAudio.volume=Math.min(0.25,menuAudio.volume+0.005);}
@@ -130,9 +129,12 @@ function fadeMenuOut(){
   });
 }
 
-// ══════════════════════════════════
+// Try autoplay immediately, fallback to first interaction
+fadeMenuIn();
+
+// ═══════════════════════════════
 // ── STAGE MUSIC (Web Audio API) ──
-// ══════════════════════════════════
+// ═══════════════════════════════
 const STAGE_FILES={stage1:'stage I.mp3',stage2:'stage II.mp3'};
 const STAGE_VOL=0.22,FADE_IN=2.0,FADE_OUT=1.2;
 let stageBuffers={},stageTrack=null,stageLoading=null,stageLoaded=false;
@@ -175,99 +177,99 @@ function playStageMusic(waveNum){
 }
 function stopAllMusic(){fadeMenuOut();stopStageTrack();}
 
-// ══════════════════════════════════
+// ═══════════════════════════════
 // ── SFX ──
-// ══════════════════════════════════
+// ═══════════════════════════════
 let ambientStarted=false;
 function startAmbient(){
   if(!AC||ambientStarted)return;ambientStarted=true;
-  const master=AC.createGain();master.gain.setValueAtTime(0.09,AC.currentTime);master.connect(AC.destination);
-  [55,55.3].forEach(f=>{const o=AC.createOscillator(),g=AC.createGain();o.type='sine';o.frequency.setValueAtTime(f,AC.currentTime);g.gain.setValueAtTime(0.5,AC.currentTime);o.connect(g);g.connect(master);o.start();});
-  const sub=AC.createOscillator(),subG=AC.createGain();sub.type='sine';sub.frequency.setValueAtTime(27.5,AC.currentTime);subG.gain.setValueAtTime(0.4,AC.currentTime);sub.connect(subG);subG.connect(master);sub.start();
+  const m=AC.createGain();m.gain.setValueAtTime(0.09,AC.currentTime);m.connect(AC.destination);
+  [55,55.3].forEach(f=>{const o=AC.createOscillator(),g=AC.createGain();o.type='sine';o.frequency.setValueAtTime(f,AC.currentTime);g.gain.setValueAtTime(0.5,AC.currentTime);o.connect(g);g.connect(m);o.start();});
+  const sub=AC.createOscillator(),sg=AC.createGain();sub.type='sine';sub.frequency.setValueAtTime(27.5,AC.currentTime);sg.gain.setValueAtTime(0.4,AC.currentTime);sub.connect(sg);sg.connect(m);sub.start();
   const bs=AC.sampleRate*2,bf=AC.createBuffer(1,bs,AC.sampleRate),dd=bf.getChannelData(0);for(let i=0;i<bs;i++)dd[i]=Math.random()*2-1;
   const ns=AC.createBufferSource();ns.buffer=bf;ns.loop=true;const nf=AC.createBiquadFilter();nf.type='bandpass';nf.frequency.setValueAtTime(120,AC.currentTime);nf.Q.value=0.5;
-  const ng=AC.createGain();ng.gain.setValueAtTime(0.06,AC.currentTime);ns.connect(nf);nf.connect(ng);ng.connect(master);ns.start();
-  const lfo=AC.createOscillator(),lG=AC.createGain();lfo.frequency.setValueAtTime(0.08,AC.currentTime);lG.gain.setValueAtTime(0.06,AC.currentTime);lfo.connect(lG);lG.connect(master.gain);lfo.start();
-  schedulePings(master);
+  const ng=AC.createGain();ng.gain.setValueAtTime(0.06,AC.currentTime);ns.connect(nf);nf.connect(ng);ng.connect(m);ns.start();
+  const lfo=AC.createOscillator(),lg=AC.createGain();lfo.frequency.setValueAtTime(0.08,AC.currentTime);lg.gain.setValueAtTime(0.06,AC.currentTime);lfo.connect(lg);lg.connect(m.gain);lfo.start();
+  schedulePings(m);
 }
-function schedulePings(dest){
-  if(!AC||!dest)return;
-  setTimeout(()=>{if(!AC)return;const o=AC.createOscillator(),g=AC.createGain();const f=220+Math.random()*660;o.type='sine';o.frequency.setValueAtTime(f,AC.currentTime);g.gain.setValueAtTime(0,AC.currentTime);g.gain.linearRampToValueAtTime(0.04,AC.currentTime+0.02);g.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+2.5);o.connect(g);g.connect(dest);o.start();o.stop(AC.currentTime+2.6);schedulePings(dest);},(4+Math.random()*8)*1000);
-}
+function schedulePings(d){if(!AC||!d)return;setTimeout(()=>{if(!AC)return;const o=AC.createOscillator(),g=AC.createGain();o.type='sine';o.frequency.setValueAtTime(220+Math.random()*660,AC.currentTime);g.gain.setValueAtTime(0,AC.currentTime);g.gain.linearRampToValueAtTime(0.04,AC.currentTime+0.02);g.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+2.5);o.connect(g);g.connect(d);o.start();o.stop(AC.currentTime+2.6);schedulePings(d);},(4+Math.random()*8)*1000);}
 function sndShoot(){if(!AC)return;const o=AC.createOscillator(),g=AC.createGain();o.type='square';o.frequency.setValueAtTime(880,AC.currentTime);o.frequency.exponentialRampToValueAtTime(220,AC.currentTime+0.08);g.gain.setValueAtTime(0.18,AC.currentTime);g.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+0.08);o.connect(g);g.connect(AC.destination);o.start();o.stop(AC.currentTime+0.09);}
 function sndHit(){if(!AC)return;const bs=Math.floor(AC.sampleRate*0.06),bf=AC.createBuffer(1,bs,AC.sampleRate),d=bf.getChannelData(0);for(let i=0;i<bs;i++)d[i]=(Math.random()*2-1)*(1-i/bs);const s=AC.createBufferSource();s.buffer=bf;const f=AC.createBiquadFilter();f.type='bandpass';f.frequency.setValueAtTime(1800,AC.currentTime);f.Q.value=1.2;const g=AC.createGain();g.gain.setValueAtTime(0.3,AC.currentTime);s.connect(f);f.connect(g);g.connect(AC.destination);s.start();s.stop(AC.currentTime+0.07);}
 function sndEnemyDie(){if(!AC)return;const bs=Math.floor(AC.sampleRate*0.12),bf=AC.createBuffer(1,bs,AC.sampleRate),d=bf.getChannelData(0);for(let i=0;i<bs;i++)d[i]=(Math.random()*2-1)*(1-i/bs);const s=AC.createBufferSource();s.buffer=bf;const f=AC.createBiquadFilter();f.type='bandpass';f.frequency.setValueAtTime(600,AC.currentTime);f.Q.value=0.8;const g=AC.createGain();g.gain.setValueAtTime(0.22,AC.currentTime);s.connect(f);f.connect(g);g.connect(AC.destination);s.start();s.stop(AC.currentTime+0.13);}
 function sndExplode(){if(!AC)return;const bs=Math.floor(AC.sampleRate*0.6),bf=AC.createBuffer(1,bs,AC.sampleRate),d=bf.getChannelData(0);for(let i=0;i<bs;i++)d[i]=Math.random()*2-1;const s=AC.createBufferSource();s.buffer=bf;const f=AC.createBiquadFilter();f.type='lowpass';f.frequency.setValueAtTime(400,AC.currentTime);f.frequency.exponentialRampToValueAtTime(60,AC.currentTime+0.5);const g=AC.createGain();g.gain.setValueAtTime(0.6,AC.currentTime);g.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+0.6);s.connect(f);f.connect(g);g.connect(AC.destination);s.start();s.stop(AC.currentTime+0.65);const o=AC.createOscillator(),og=AC.createGain();o.type='sine';o.frequency.setValueAtTime(80,AC.currentTime);o.frequency.exponentialRampToValueAtTime(20,AC.currentTime+0.4);og.gain.setValueAtTime(0.5,AC.currentTime);og.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+0.45);o.connect(og);og.connect(AC.destination);o.start();o.stop(AC.currentTime+0.5);}
 
-// ── First interaction ──
+// ── First interaction (fallback for autoplay block + SFX init) ──
 let firstClick=false;
-function onFirstClick(){if(firstClick)return;firstClick=true;ensureAudio();startAmbient();fadeMenuIn();if(AC)loadStageMusic();}
+function onFirstClick(){
+  if(firstClick)return;firstClick=true;
+  ensureAudio();startAmbient();
+  if(!menuPlaying)fadeMenuIn(); // retry menu if autoplay was blocked
+  if(AC)loadStageMusic();
+}
 document.addEventListener('click',onFirstClick);
 document.addEventListener('keydown',onFirstClick);
 document.addEventListener('touchstart',onFirstClick);
 
-// ══════════════════════════════════
+// ═══════════════════════════════
 // ── GAME BALANCE ──
-// ══════════════════════════════════
-// shootMin/shootRnd = base frames between enemy shots (higher = slower shooting)
-// bulletSpd = enemy bullet speed (lower = easier to dodge)
-// diveChance = per-enemy per-frame chance to dive (lower = fewer divers)
-// descentPx = how far formation descends over time
-// formSpeed = horizontal sway speed
-// shooterPct = fraction of enemies that CAN shoot (0.0-1.0)
-// lives = starting lives
+// ═══════════════════════════════
+// ALL parameters are FIXED per wave. Nothing changes mid-wave.
+// shootMin/shootRnd = frames between shots for shooters
+// bulletSpd = enemy bullet px/frame (CONSTANT for all bullets in wave)
+// maxDivers = max enemies diving simultaneously
+// maxBullets = max enemy bullets on screen at once
+// formSpeed = horizontal sway px/frame (constant)
+// shooterPct = fraction of enemies that can shoot
+// diveSpd = fixed dive speed (no acceleration)
 
 const DIFF={
   easy:{
-    shootMin:600, shootRnd:800,
-    bulletSpd:IS_RETINA?1.4:1.0,
-    diveChance:0.00004,
-    descentPx:18, formSpeed:0.18,
-    shooterPct:0.3,
+    shootMin:700, shootRnd:900,
+    bulletSpd:IS_RETINA?1.2:0.8,
+    maxDivers:1, maxBullets:4,
+    formSpeed:0.15, shooterPct:0.2,
+    diveSpd:IS_RETINA?2.0:1.5,
     lives:5
   },
   normal:{
-    shootMin:350, shootRnd:450,
-    bulletSpd:IS_RETINA?2.2:1.6,
-    diveChance:0.00015,
-    descentPx:30, formSpeed:0.30,
-    shooterPct:0.55,
+    shootMin:400, shootRnd:500,
+    bulletSpd:IS_RETINA?2.0:1.4,
+    maxDivers:2, maxBullets:8,
+    formSpeed:0.28, shooterPct:0.45,
+    diveSpd:IS_RETINA?3.0:2.2,
     lives:3
   },
   hard:{
-    shootMin:160, shootRnd:200,
-    bulletSpd:IS_RETINA?3.5:2.5,
-    diveChance:0.00035,
-    descentPx:44, formSpeed:0.40,
-    shooterPct:0.8,
+    shootMin:180, shootRnd:220,
+    bulletSpd:IS_RETINA?3.2:2.3,
+    maxDivers:4, maxBullets:14,
+    formSpeed:0.38, shooterPct:0.7,
+    diveSpd:IS_RETINA?3.8:2.8,
     lives:2
   },
 };
 
-// Wave progression curves — waves 1-4 ramp slowly, then steeper
-// Returns a multiplier 0.0 → 1.0 based on wave
+// Slow ramp over waves 1-4, then faster
 function waveRamp(w){
-  // w1=0, w2=0.15, w3=0.35, w4=0.55, w5+=accelerating
   if(w<=1)return 0;
-  if(w<=4)return (w-1)*0.18;
-  return 0.54+(w-4)*0.12;
+  if(w<=4)return (w-1)*0.15; // w2=0.15, w3=0.30, w4=0.45
+  return 0.45+(w-4)*0.1;     // w5=0.55, w6=0.65...
 }
 
 let difficulty='easy',D=DIFF[difficulty];
-let waveShootMin,waveBulletSpd,waveDiveChance,waveFormSpeed,waveShooterPct;
+// Frozen wave params — set once per wave, never change mid-wave
+let W_shootMin,W_shootRnd,W_bulletSpd,W_maxDivers,W_maxBullets,W_formSpeed,W_shooterPct,W_diveSpd;
 
 function computeWaveParams(){
   const r=Math.min(waveRamp(wave),1.0);
-  // shoot interval decreases with wave (enemies shoot faster)
-  waveShootMin=Math.max(D.shootMin*(1-r*0.5), D.shootMin*0.35);
-  // bullet speed increases slightly
-  waveBulletSpd=D.bulletSpd*(1+r*0.4);
-  // dive chance increases
-  waveDiveChance=D.diveChance*(1+r*2.0);
-  // formation speed increases
-  waveFormSpeed=D.formSpeed*(1+r*0.5);
-  // fraction of enemies that shoot increases
-  waveShooterPct=Math.min(D.shooterPct+r*0.3, 0.95);
+  W_shootMin=Math.max(D.shootMin*(1-r*0.45), D.shootMin*0.35);
+  W_shootRnd=Math.max(D.shootRnd*(1-r*0.3), D.shootRnd*0.4);
+  W_bulletSpd=D.bulletSpd*(1+r*0.35);
+  W_maxDivers=D.maxDivers+Math.floor(r*3);
+  W_maxBullets=D.maxBullets+Math.floor(r*6);
+  W_formSpeed=D.formSpeed*(1+r*0.4);
+  W_shooterPct=Math.min(D.shooterPct+r*0.25, 0.9);
+  W_diveSpd=D.diveSpd*(1+r*0.2);
 }
 
 function setDiff(d,btn){
@@ -281,9 +283,8 @@ let player,bullets,enemyBullets,enemies,particles;
 let keys={},lastShot=0;
 const SHOT_COOLDOWN=280;
 let frameId,waveClearing=false,playerHitCooldown=0;
-let formDir=1,formX=0,formDescentOffset=0;
-const FORM_RANGE=IS_RETINA?55:36,DESCENT_FRAMES=480;
-let descentFrame=0;
+let formDir=1,formX=0;
+const FORM_RANGE=IS_RETINA?55:36;
 
 const ENEMY_DRAWS=[
   (c,x,y,s)=>{c.lineWidth=1;c.beginPath();c.moveTo(x,y-s*.45);c.lineTo(x+s*.42,y+s*.35);c.lineTo(x-s*.42,y+s*.35);c.closePath();c.stroke();c.beginPath();c.arc(x,y,s*.12,0,Math.PI*2);c.fillStyle=c.strokeStyle;c.fill();},
@@ -308,19 +309,27 @@ function initGame(){
 }
 
 function spawnEnemies(){
-  enemies=[];formDescentOffset=0;descentFrame=0;
+  enemies=[];
   const cols=BASE_COLS+Math.min(wave-1,5),rows=BASE_ROWS+Math.min(Math.floor((wave-1)/2),4);
   const offX=(W-(cols-1)*SPACING)/2,offY=IS_RETINA?100:70;
-  const totalEnemies=cols*rows;
-  // determine which enemies can shoot based on shooterPct
-  const shooterCount=Math.max(3,Math.floor(totalEnemies*waveShooterPct));
-  const shooterIndices=new Set();
-  while(shooterIndices.size<shooterCount){shooterIndices.add(Math.floor(Math.random()*totalEnemies));}
+  const total=cols*rows;
+  const shooterCount=Math.max(2,Math.floor(total*W_shooterPct));
+  const shooterSet=new Set();
+  while(shooterSet.size<shooterCount){shooterSet.add(Math.floor(Math.random()*total));}
   let idx=0;
   for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
     const type=r<1?5:r<2?3:r%2===0?0:1+Math.floor(r/2)%4;
-    const canShoot=shooterIndices.has(idx);
-    enemies.push({x:offX+c*SPACING,y:offY+r*SPACING,baseX:offX+c*SPACING,baseY:offY+r*SPACING,type:type%6,hp:r===0?2:1,diving:false,diveAngle:0,diveSpeed:0,shootTimer:canShoot?(waveShootMin+Math.random()*D.shootRnd+(r+c)*30):-1,canShoot:canShoot,phase:Math.random()*Math.PI*2,alive:true});
+    const canShoot=shooterSet.has(idx);
+    enemies.push({
+      x:offX+c*SPACING, y:offY+r*SPACING,
+      baseX:offX+c*SPACING, baseY:offY+r*SPACING,
+      type:type%6, hp:r===0?2:1,
+      diving:false, diveAngle:0,
+      shootTimer:canShoot?(W_shootMin+Math.random()*W_shootRnd+(r+c)*30):-1,
+      canShoot:canShoot,
+      phase:Math.random()*Math.PI*2,
+      alive:true
+    });
     idx++;
   }
 }
@@ -328,20 +337,44 @@ function spawnEnemies(){
 function updateEnemies(t){
   const alive=enemies.filter(e=>e.alive);
   if(!alive.length){waveClearing=true;return;}
-  formX+=waveFormSpeed*formDir;
+
+  // Formation sway — constant speed, no descent
+  formX+=W_formSpeed*formDir;
   if(Math.abs(formX)>FORM_RANGE)formDir*=-1;
-  if(descentFrame<DESCENT_FRAMES){descentFrame++;formDescentOffset=(descentFrame/DESCENT_FRAMES)*D.descentPx;}
+
+  // Count current divers
+  const currentDivers=alive.filter(e=>e.diving).length;
+
   alive.forEach(e=>{
     if(!e.diving){
-      e.x=e.baseX+formX;e.y=e.baseY+formDescentOffset+Math.sin(t*.001+e.phase)*3;
-      if(Math.random()<waveDiveChance&&!waveClearing){e.diving=true;e.diveAngle=Math.atan2(player.y-e.y,player.x-e.x);e.diveSpeed=IS_RETINA?3.5:2.5;}
-      if(e.canShoot&&e.shootTimer>=0){
+      e.x=e.baseX+formX;
+      e.y=e.baseY+Math.sin(t*.001+e.phase)*3;
+
+      // Dive — only if under max divers limit
+      if(currentDivers<W_maxDivers && Math.random()<0.00008 && !waveClearing){
+        e.diving=true;
+        e.diveAngle=Math.atan2(player.y-e.y,player.x-e.x);
+      }
+
+      // Shoot — only if under max bullets limit
+      if(e.canShoot && e.shootTimer>=0){
         e.shootTimer--;
-        if(e.shootTimer<=0){e.shootTimer=waveShootMin+Math.random()*D.shootRnd;enemyBullets.push({x:e.x,y:e.y+ENEMY_SIZE/2,vy:waveBulletSpd});}
+        if(e.shootTimer<=0 && enemyBullets.length<W_maxBullets){
+          e.shootTimer=W_shootMin+Math.random()*W_shootRnd;
+          enemyBullets.push({x:e.x,y:e.y+ENEMY_SIZE/2,vy:W_bulletSpd});
+        } else if(e.shootTimer<=0){
+          e.shootTimer=W_shootMin*0.5; // wait a bit and retry
+        }
       }
     } else {
-      e.x+=Math.cos(e.diveAngle)*e.diveSpeed;e.y+=Math.sin(e.diveAngle)*e.diveSpeed;e.diveSpeed+=.05;
-      if(e.y>H+60||e.x<-60||e.x>W+60){e.diving=false;e.x=e.baseX+formX;e.y=e.baseY+formDescentOffset;e.diveSpeed=IS_RETINA?3.5:2.5;}
+      // Dive movement — FIXED speed, no acceleration
+      e.x+=Math.cos(e.diveAngle)*W_diveSpd;
+      e.y+=Math.sin(e.diveAngle)*W_diveSpd;
+      if(e.y>H+60||e.x<-60||e.x>W+60){
+        e.diving=false;
+        e.x=e.baseX+formX;
+        e.y=e.baseY;
+      }
     }
   });
 }
@@ -443,14 +476,14 @@ function showScreen(s){
 function startGame(){
   ensureAudio();if(AC&&AC.state==='suspended')AC.resume();startAmbient();
   D=DIFF[difficulty];score=0;wave=1;lives=D.lives;
-  formX=0;formDir=1;descentFrame=0;formDescentOffset=0;playerHitCooldown=0;
+  formX=0;formDir=1;playerHitCooldown=0;
   updateHUD();initGame();
   fadeMenuOut().then(()=>playStageMusic(wave));
   showScreen('play');
 }
 
 function nextWave(){
-  wave++;formX=0;formDir=1;descentFrame=0;formDescentOffset=0;
+  wave++;formX=0;formDir=1;
   bullets=[];enemyBullets=[];particles=[];waveClearing=false;
   computeWaveParams();updateHUD();spawnEnemies();
   playStageMusic(wave);

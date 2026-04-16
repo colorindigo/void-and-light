@@ -91,34 +91,72 @@ const ENEMY_SIZE=IS_RETINA?27:19,SPACING=IS_RETINA?50:34;
 const BASE_COLS=11,BASE_ROWS=4;
 
 // ══════════════════════════════════
+// ── AUDIO CONTEXT (single source of truth) ──
+// ══════════════════════════════════
+let AC=null;
+let audioReady=false;
+
+function ensureAudio(){
+  if(AC)return;
+  try{
+    AC=new(window.AudioContext||window.webkitAudioContext)();
+    audioReady=true;
+    console.log('AudioContext created, state:',AC.state);
+  }catch(e){console.warn('AudioContext failed:',e);}
+}
+
+// ══════════════════════════════════
 // ── MUSIC SYSTEM ──
 // ══════════════════════════════════
 const MUSIC_FILES={
-  menu:'main menu.wav',
-  stage1:'stage I.mp3',
-  stage2:'stage II.mp3'
+  menu:'main%20menu.wav',
+  stage1:'stage%20I.mp3',
+  stage2:'stage%20II.mp3'
 };
-const MUSIC_VOL={menu:0.22,stage:0.18};
-const FADE_IN=2.5,FADE_OUT=1.5;
+const MUSIC_VOL={menu:0.25,stage:0.22};
+const FADE_IN=2.0,FADE_OUT=1.2;
 
 let musicBuffers={};
-let currentTrack=null;   // {source, gain, name}
+let currentTrack=null;
+let musicLoading=false;
 let musicLoaded=false;
 
 function loadAllMusic(){
   if(musicLoaded)return Promise.resolve();
-  const keys=Object.keys(MUSIC_FILES);
-  return Promise.all(keys.map(k=>
-    fetch(MUSIC_FILES[k])
-      .then(r=>{if(!r.ok)throw new Error(k+' not found');return r.arrayBuffer();})
-      .then(buf=>AC.decodeAudioData(buf))
-      .then(decoded=>{musicBuffers[k]=decoded;})
-      .catch(e=>console.warn('Music load fail:',k,e.message))
-  )).then(()=>{musicLoaded=true;});
+  if(musicLoading)return musicLoading;
+  console.log('Loading music files...');
+  const names=Object.keys(MUSIC_FILES);
+  musicLoading=Promise.all(names.map(name=>{
+    const url=MUSIC_FILES[name];
+    console.log('Fetching:',url);
+    return fetch(url)
+      .then(r=>{
+        console.log(name,'fetch status:',r.status);
+        if(!r.ok)throw new Error(name+' HTTP '+r.status);
+        return r.arrayBuffer();
+      })
+      .then(buf=>{
+        console.log(name,'decoding',buf.byteLength,'bytes');
+        return AC.decodeAudioData(buf);
+      })
+      .then(decoded=>{
+        musicBuffers[name]=decoded;
+        console.log(name,'decoded OK, duration:',decoded.duration.toFixed(1)+'s');
+      })
+      .catch(e=>console.warn('Music load FAIL:',name,e.message));
+  })).then(()=>{
+    musicLoaded=true;
+    console.log('All music loaded. Buffers:',Object.keys(musicBuffers));
+  });
+  return musicLoading;
 }
 
 function playTrack(name,vol){
-  if(!AC||!musicBuffers[name])return;
+  if(!AC||!musicBuffers[name]){
+    console.warn('playTrack skip:','AC=',!!AC,'buffer=',!!musicBuffers[name],name);
+    return;
+  }
+  if(AC.state==='suspended')AC.resume();
   const src=AC.createBufferSource();
   const gain=AC.createGain();
   src.buffer=musicBuffers[name];
@@ -129,6 +167,7 @@ function playTrack(name,vol){
   gain.connect(AC.destination);
   src.start(0);
   currentTrack={source:src,gain:gain,name:name};
+  console.log('Playing:',name,'vol:',vol);
 }
 
 function stopCurrentTrack(){
@@ -136,35 +175,42 @@ function stopCurrentTrack(){
     if(!currentTrack||!AC){resolve();return;}
     const t=AC.currentTime;
     const g=currentTrack.gain;
-    const s=currentTrack.source;
     g.gain.cancelScheduledValues(t);
     g.gain.setValueAtTime(g.gain.value,t);
     g.gain.linearRampToValueAtTime(0,t+FADE_OUT);
     const ref=currentTrack;
     currentTrack=null;
-    setTimeout(()=>{try{ref.source.stop();}catch(e){}resolve();},FADE_OUT*1000+100);
+    setTimeout(()=>{
+      try{ref.source.stop();}catch(e){}
+      resolve();
+    },FADE_OUT*1000+100);
   });
 }
 
 function crossfadeTo(name,vol){
-  if(currentTrack&&currentTrack.name===name)return;
-  stopCurrentTrack().then(()=>playTrack(name,vol));
+  if(currentTrack&&currentTrack.name===name)return Promise.resolve();
+  return stopCurrentTrack().then(()=>playTrack(name,vol));
 }
 
 function getStageTrack(waveNum){
-  // wave 1 = stage1, wave 2 = stage2, then alternate
   return (waveNum%2===1)?'stage1':'stage2';
 }
 
 function playMenuMusic(){
   if(!AC)return;
-  loadAllMusic().then(()=>crossfadeTo('menu',MUSIC_VOL.menu));
+  loadAllMusic().then(()=>{
+    console.log('Menu music: starting crossfade');
+    crossfadeTo('menu',MUSIC_VOL.menu);
+  });
 }
 
 function playStageMusic(waveNum){
   if(!AC)return;
   const track=getStageTrack(waveNum);
-  crossfadeTo(track,MUSIC_VOL.stage);
+  loadAllMusic().then(()=>{
+    console.log('Stage music: wave',waveNum,'track:',track);
+    crossfadeTo(track,MUSIC_VOL.stage);
+  });
 }
 
 function stopMusic(){
@@ -172,19 +218,13 @@ function stopMusic(){
 }
 
 // ══════════════════════════════════
-// ── WEB AUDIO ENGINE (SFX) ──
+// ── SFX (synthesized) ──
 // ══════════════════════════════════
-let AC=null;
-
-function initAudio(){
-  if(AC)return;
-  AC=new(window.AudioContext||window.webkitAudioContext)();
-  startAmbient();
-  playMenuMusic();
-}
+let ambientStarted=false;
 
 function startAmbient(){
-  if(!AC)return;
+  if(!AC||ambientStarted)return;
+  ambientStarted=true;
   const master=AC.createGain();
   master.gain.setValueAtTime(0.09,AC.currentTime);
   master.connect(AC.destination);
@@ -297,6 +337,23 @@ function sndExplode(){
   o.connect(og);og.connect(AC.destination);
   o.start();o.stop(AC.currentTime+0.5);
 }
+
+// ══════════════════════════════════
+// ── FIRST INTERACTION → start audio + menu music ──
+// ══════════════════════════════════
+let firstInteraction=false;
+function onFirstInteraction(){
+  if(firstInteraction)return;
+  firstInteraction=true;
+  ensureAudio();
+  if(AC&&AC.state==='suspended')AC.resume();
+  startAmbient();
+  playMenuMusic();
+  console.log('First interaction: audio init + menu music');
+}
+document.addEventListener('click',onFirstInteraction,{once:false});
+document.addEventListener('keydown',onFirstInteraction,{once:false});
+document.addEventListener('touchstart',onFirstInteraction,{once:false});
 
 // ══════════════════════════════════
 // ── GAME ──
@@ -476,13 +533,16 @@ function showScreen(s){
 }
 
 function startGame(){
-  initAudio();
+  ensureAudio();
+  if(AC&&AC.state==='suspended')AC.resume();
+  startAmbient();
   D=DIFF[difficulty];score=0;wave=1;lives=D.lives;
   formX=0;formDir=1;descentFrame=0;formDescentOffset=0;playerHitCooldown=0;
   updateHUD();initGame();
   playStageMusic(wave);
   showScreen('play');
 }
+
 function nextWave(){
   wave++;formX=0;formDir=1;descentFrame=0;formDescentOffset=0;
   bullets=[];enemyBullets=[];particles=[];waveClearing=false;
@@ -496,7 +556,7 @@ document.getElementById('retry-btn').onclick=()=>{
   stopMusic();
   document.getElementById('over-screen').style.display='none';
   document.getElementById('start-screen').style.display='flex';
-  playMenuMusic();
+  setTimeout(()=>playMenuMusic(),200);
 };
 document.getElementById('next-btn').onclick=nextWave;
 

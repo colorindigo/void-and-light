@@ -94,23 +94,20 @@ const BASE_COLS=11,BASE_ROWS=4;
 // ── AUDIO CONTEXT ──
 // ══════════════════════════════════
 let AC=null;
-
 function ensureAudio(){
   if(AC)return;
   try{
     AC=new(window.AudioContext||window.webkitAudioContext)();
     if(AC.state==='suspended')AC.resume();
-  }catch(e){console.warn('AC fail',e);}
+  }catch(e){}
 }
 
 // ══════════════════════════════════
-// ── MENU MUSIC (HTML Audio — streams, no decode wait) ──
+// ── MENU MUSIC (HTML Audio) ──
 // ══════════════════════════════════
 const menuAudio=new Audio('main menu.wav');
-menuAudio.loop=true;
-menuAudio.volume=0;
-let menuFadeInterval=null;
-let menuPlaying=false;
+menuAudio.loop=true;menuAudio.volume=0;
+let menuFadeInterval=null,menuPlaying=false;
 
 function fadeMenuIn(){
   menuAudio.volume=0;
@@ -118,250 +115,161 @@ function fadeMenuIn(){
   menuPlaying=true;
   clearInterval(menuFadeInterval);
   menuFadeInterval=setInterval(()=>{
-    if(menuAudio.volume<0.25){
-      menuAudio.volume=Math.min(0.25,menuAudio.volume+0.005);
-    }else{clearInterval(menuFadeInterval);}
+    if(menuAudio.volume<0.25){menuAudio.volume=Math.min(0.25,menuAudio.volume+0.005);}
+    else clearInterval(menuFadeInterval);
   },30);
 }
-
 function fadeMenuOut(){
   if(!menuPlaying)return new Promise(r=>r());
   return new Promise(resolve=>{
     clearInterval(menuFadeInterval);
     menuFadeInterval=setInterval(()=>{
-      if(menuAudio.volume>0.01){
-        menuAudio.volume=Math.max(0,menuAudio.volume-0.008);
-      }else{
-        clearInterval(menuFadeInterval);
-        menuAudio.pause();
-        menuAudio.currentTime=0;
-        menuPlaying=false;
-        resolve();
-      }
+      if(menuAudio.volume>0.01){menuAudio.volume=Math.max(0,menuAudio.volume-0.008);}
+      else{clearInterval(menuFadeInterval);menuAudio.pause();menuAudio.currentTime=0;menuPlaying=false;resolve();}
     },30);
   });
 }
 
 // ══════════════════════════════════
-// ── STAGE MUSIC (Web Audio API — decoded buffers) ──
+// ── STAGE MUSIC (Web Audio API) ──
 // ══════════════════════════════════
 const STAGE_FILES={stage1:'stage I.mp3',stage2:'stage II.mp3'};
-const STAGE_VOL=0.22;
-const FADE_IN=2.0,FADE_OUT=1.2;
-
-let stageBuffers={};
-let stageTrack=null; // {source, gain, name}
-let stageLoading=null;
-let stageLoaded=false;
+const STAGE_VOL=0.22,FADE_IN=2.0,FADE_OUT=1.2;
+let stageBuffers={},stageTrack=null,stageLoading=null,stageLoaded=false;
 
 function loadStageMusic(){
   if(stageLoaded)return Promise.resolve();
   if(stageLoading)return stageLoading;
   if(!AC)return Promise.resolve();
-  stageLoading=Promise.all(Object.keys(STAGE_FILES).map(name=>{
-    return fetch(STAGE_FILES[name])
-      .then(r=>{if(!r.ok)throw new Error(r.status);return r.arrayBuffer();})
-      .then(buf=>AC.decodeAudioData(buf))
-      .then(decoded=>{stageBuffers[name]=decoded;})
-      .catch(e=>console.warn('Stage load fail:',name,e));
-  })).then(()=>{stageLoaded=true;});
+  stageLoading=Promise.all(Object.keys(STAGE_FILES).map(n=>
+    fetch(STAGE_FILES[n]).then(r=>{if(!r.ok)throw new Error(r.status);return r.arrayBuffer();})
+    .then(buf=>AC.decodeAudioData(buf)).then(d=>{stageBuffers[n]=d;}).catch(e=>console.warn(n,e))
+  )).then(()=>{stageLoaded=true;});
   return stageLoading;
 }
-
 function playStageTrack(name){
   if(!AC||!stageBuffers[name])return;
   if(AC.state==='suspended')AC.resume();
-  const src=AC.createBufferSource();
-  const gain=AC.createGain();
-  src.buffer=stageBuffers[name];
-  src.loop=true;
+  const src=AC.createBufferSource(),gain=AC.createGain();
+  src.buffer=stageBuffers[name];src.loop=true;
   gain.gain.setValueAtTime(0,AC.currentTime);
   gain.gain.linearRampToValueAtTime(STAGE_VOL,AC.currentTime+FADE_IN);
-  src.connect(gain);gain.connect(AC.destination);
-  src.start(0);
+  src.connect(gain);gain.connect(AC.destination);src.start(0);
   stageTrack={source:src,gain:gain,name:name};
 }
-
 function stopStageTrack(){
   return new Promise(resolve=>{
     if(!stageTrack||!AC){resolve();return;}
-    const t=AC.currentTime;
-    const g=stageTrack.gain;
-    g.gain.cancelScheduledValues(t);
-    g.gain.setValueAtTime(g.gain.value,t);
+    const t=AC.currentTime,g=stageTrack.gain;
+    g.gain.cancelScheduledValues(t);g.gain.setValueAtTime(g.gain.value,t);
     g.gain.linearRampToValueAtTime(0,t+FADE_OUT);
-    const ref=stageTrack;
-    stageTrack=null;
+    const ref=stageTrack;stageTrack=null;
     setTimeout(()=>{try{ref.source.stop();}catch(e){}resolve();},FADE_OUT*1000+100);
   });
 }
-
-function switchToStage(waveNum){
-  const name=(waveNum%2===1)?'stage1':'stage2';
-  if(stageTrack&&stageTrack.name===name)return;
-  stopStageTrack().then(()=>playStageTrack(name));
-}
-
 function playStageMusic(waveNum){
   if(!AC)return;
-  loadStageMusic().then(()=>switchToStage(waveNum));
+  const name=(waveNum%2===1)?'stage1':'stage2';
+  if(stageTrack&&stageTrack.name===name)return;
+  loadStageMusic().then(()=>stopStageTrack().then(()=>playStageTrack(name)));
 }
-
-function stopAllMusic(){
-  fadeMenuOut();
-  stopStageTrack();
-}
+function stopAllMusic(){fadeMenuOut();stopStageTrack();}
 
 // ══════════════════════════════════
-// ── SFX (synthesized) ──
+// ── SFX ──
 // ══════════════════════════════════
 let ambientStarted=false;
-
 function startAmbient(){
-  if(!AC||ambientStarted)return;
-  ambientStarted=true;
-  const master=AC.createGain();
-  master.gain.setValueAtTime(0.09,AC.currentTime);
-  master.connect(AC.destination);
-  [55,55.3].forEach(freq=>{
-    const o=AC.createOscillator(),g=AC.createGain();
-    o.type='sine';o.frequency.setValueAtTime(freq,AC.currentTime);
-    g.gain.setValueAtTime(0.5,AC.currentTime);
-    o.connect(g);g.connect(master);o.start();
-  });
-  const sub=AC.createOscillator(),subG=AC.createGain();
-  sub.type='sine';sub.frequency.setValueAtTime(27.5,AC.currentTime);
-  subG.gain.setValueAtTime(0.4,AC.currentTime);
-  sub.connect(subG);subG.connect(master);sub.start();
-  const bufSize=AC.sampleRate*2;
-  const buf=AC.createBuffer(1,bufSize,AC.sampleRate);
-  const data=buf.getChannelData(0);
-  for(let i=0;i<bufSize;i++)data[i]=Math.random()*2-1;
-  const noise=AC.createBufferSource();
-  noise.buffer=buf;noise.loop=true;
-  const nf=AC.createBiquadFilter();
-  nf.type='bandpass';nf.frequency.setValueAtTime(120,AC.currentTime);nf.Q.value=0.5;
-  const ng=AC.createGain();ng.gain.setValueAtTime(0.06,AC.currentTime);
-  noise.connect(nf);nf.connect(ng);ng.connect(master);noise.start();
-  const lfo=AC.createOscillator(),lfoG=AC.createGain();
-  lfo.frequency.setValueAtTime(0.08,AC.currentTime);
-  lfoG.gain.setValueAtTime(0.06,AC.currentTime);
-  lfo.connect(lfoG);lfoG.connect(master.gain);lfo.start();
+  if(!AC||ambientStarted)return;ambientStarted=true;
+  const master=AC.createGain();master.gain.setValueAtTime(0.09,AC.currentTime);master.connect(AC.destination);
+  [55,55.3].forEach(f=>{const o=AC.createOscillator(),g=AC.createGain();o.type='sine';o.frequency.setValueAtTime(f,AC.currentTime);g.gain.setValueAtTime(0.5,AC.currentTime);o.connect(g);g.connect(master);o.start();});
+  const sub=AC.createOscillator(),subG=AC.createGain();sub.type='sine';sub.frequency.setValueAtTime(27.5,AC.currentTime);subG.gain.setValueAtTime(0.4,AC.currentTime);sub.connect(subG);subG.connect(master);sub.start();
+  const bs=AC.sampleRate*2,bf=AC.createBuffer(1,bs,AC.sampleRate),dd=bf.getChannelData(0);for(let i=0;i<bs;i++)dd[i]=Math.random()*2-1;
+  const ns=AC.createBufferSource();ns.buffer=bf;ns.loop=true;const nf=AC.createBiquadFilter();nf.type='bandpass';nf.frequency.setValueAtTime(120,AC.currentTime);nf.Q.value=0.5;
+  const ng=AC.createGain();ng.gain.setValueAtTime(0.06,AC.currentTime);ns.connect(nf);nf.connect(ng);ng.connect(master);ns.start();
+  const lfo=AC.createOscillator(),lG=AC.createGain();lfo.frequency.setValueAtTime(0.08,AC.currentTime);lG.gain.setValueAtTime(0.06,AC.currentTime);lfo.connect(lG);lG.connect(master.gain);lfo.start();
   schedulePings(master);
 }
-
 function schedulePings(dest){
   if(!AC||!dest)return;
-  setTimeout(()=>{
-    if(!AC)return;
-    const o=AC.createOscillator(),g=AC.createGain();
-    const freq=220+Math.random()*660;
-    o.type='sine';o.frequency.setValueAtTime(freq,AC.currentTime);
-    g.gain.setValueAtTime(0,AC.currentTime);
-    g.gain.linearRampToValueAtTime(0.04,AC.currentTime+0.02);
-    g.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+2.5);
-    o.connect(g);g.connect(dest);
-    o.start();o.stop(AC.currentTime+2.6);
-    schedulePings(dest);
-  },(4+Math.random()*8)*1000);
+  setTimeout(()=>{if(!AC)return;const o=AC.createOscillator(),g=AC.createGain();const f=220+Math.random()*660;o.type='sine';o.frequency.setValueAtTime(f,AC.currentTime);g.gain.setValueAtTime(0,AC.currentTime);g.gain.linearRampToValueAtTime(0.04,AC.currentTime+0.02);g.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+2.5);o.connect(g);g.connect(dest);o.start();o.stop(AC.currentTime+2.6);schedulePings(dest);},(4+Math.random()*8)*1000);
 }
+function sndShoot(){if(!AC)return;const o=AC.createOscillator(),g=AC.createGain();o.type='square';o.frequency.setValueAtTime(880,AC.currentTime);o.frequency.exponentialRampToValueAtTime(220,AC.currentTime+0.08);g.gain.setValueAtTime(0.18,AC.currentTime);g.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+0.08);o.connect(g);g.connect(AC.destination);o.start();o.stop(AC.currentTime+0.09);}
+function sndHit(){if(!AC)return;const bs=Math.floor(AC.sampleRate*0.06),bf=AC.createBuffer(1,bs,AC.sampleRate),d=bf.getChannelData(0);for(let i=0;i<bs;i++)d[i]=(Math.random()*2-1)*(1-i/bs);const s=AC.createBufferSource();s.buffer=bf;const f=AC.createBiquadFilter();f.type='bandpass';f.frequency.setValueAtTime(1800,AC.currentTime);f.Q.value=1.2;const g=AC.createGain();g.gain.setValueAtTime(0.3,AC.currentTime);s.connect(f);f.connect(g);g.connect(AC.destination);s.start();s.stop(AC.currentTime+0.07);}
+function sndEnemyDie(){if(!AC)return;const bs=Math.floor(AC.sampleRate*0.12),bf=AC.createBuffer(1,bs,AC.sampleRate),d=bf.getChannelData(0);for(let i=0;i<bs;i++)d[i]=(Math.random()*2-1)*(1-i/bs);const s=AC.createBufferSource();s.buffer=bf;const f=AC.createBiquadFilter();f.type='bandpass';f.frequency.setValueAtTime(600,AC.currentTime);f.Q.value=0.8;const g=AC.createGain();g.gain.setValueAtTime(0.22,AC.currentTime);s.connect(f);f.connect(g);g.connect(AC.destination);s.start();s.stop(AC.currentTime+0.13);}
+function sndExplode(){if(!AC)return;const bs=Math.floor(AC.sampleRate*0.6),bf=AC.createBuffer(1,bs,AC.sampleRate),d=bf.getChannelData(0);for(let i=0;i<bs;i++)d[i]=Math.random()*2-1;const s=AC.createBufferSource();s.buffer=bf;const f=AC.createBiquadFilter();f.type='lowpass';f.frequency.setValueAtTime(400,AC.currentTime);f.frequency.exponentialRampToValueAtTime(60,AC.currentTime+0.5);const g=AC.createGain();g.gain.setValueAtTime(0.6,AC.currentTime);g.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+0.6);s.connect(f);f.connect(g);g.connect(AC.destination);s.start();s.stop(AC.currentTime+0.65);const o=AC.createOscillator(),og=AC.createGain();o.type='sine';o.frequency.setValueAtTime(80,AC.currentTime);o.frequency.exponentialRampToValueAtTime(20,AC.currentTime+0.4);og.gain.setValueAtTime(0.5,AC.currentTime);og.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+0.45);o.connect(og);og.connect(AC.destination);o.start();o.stop(AC.currentTime+0.5);}
 
-function sndShoot(){
-  if(!AC)return;
-  const o=AC.createOscillator(),g=AC.createGain();
-  o.type='square';
-  o.frequency.setValueAtTime(880,AC.currentTime);
-  o.frequency.exponentialRampToValueAtTime(220,AC.currentTime+0.08);
-  g.gain.setValueAtTime(0.18,AC.currentTime);
-  g.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+0.08);
-  o.connect(g);g.connect(AC.destination);
-  o.start();o.stop(AC.currentTime+0.09);
-}
-
-function sndHit(){
-  if(!AC)return;
-  const bufSize=Math.floor(AC.sampleRate*0.06);
-  const buf=AC.createBuffer(1,bufSize,AC.sampleRate);
-  const d=buf.getChannelData(0);
-  for(let i=0;i<bufSize;i++)d[i]=(Math.random()*2-1)*(1-i/bufSize);
-  const src=AC.createBufferSource();src.buffer=buf;
-  const f=AC.createBiquadFilter();f.type='bandpass';f.frequency.setValueAtTime(1800,AC.currentTime);f.Q.value=1.2;
-  const g=AC.createGain();g.gain.setValueAtTime(0.3,AC.currentTime);
-  src.connect(f);f.connect(g);g.connect(AC.destination);
-  src.start();src.stop(AC.currentTime+0.07);
-}
-
-function sndEnemyDie(){
-  if(!AC)return;
-  const bufSize=Math.floor(AC.sampleRate*0.12);
-  const buf=AC.createBuffer(1,bufSize,AC.sampleRate);
-  const d=buf.getChannelData(0);
-  for(let i=0;i<bufSize;i++)d[i]=(Math.random()*2-1)*(1-i/bufSize);
-  const src=AC.createBufferSource();src.buffer=buf;
-  const f=AC.createBiquadFilter();f.type='bandpass';f.frequency.setValueAtTime(600,AC.currentTime);f.Q.value=0.8;
-  const g=AC.createGain();g.gain.setValueAtTime(0.22,AC.currentTime);
-  src.connect(f);f.connect(g);g.connect(AC.destination);
-  src.start();src.stop(AC.currentTime+0.13);
-}
-
-function sndExplode(){
-  if(!AC)return;
-  const bufSize=Math.floor(AC.sampleRate*0.6);
-  const buf=AC.createBuffer(1,bufSize,AC.sampleRate);
-  const d=buf.getChannelData(0);
-  for(let i=0;i<bufSize;i++)d[i]=Math.random()*2-1;
-  const src=AC.createBufferSource();src.buffer=buf;
-  const f=AC.createBiquadFilter();f.type='lowpass';
-  f.frequency.setValueAtTime(400,AC.currentTime);
-  f.frequency.exponentialRampToValueAtTime(60,AC.currentTime+0.5);
-  const g=AC.createGain();
-  g.gain.setValueAtTime(0.6,AC.currentTime);
-  g.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+0.6);
-  src.connect(f);f.connect(g);g.connect(AC.destination);
-  src.start();src.stop(AC.currentTime+0.65);
-  const o=AC.createOscillator(),og=AC.createGain();
-  o.type='sine';o.frequency.setValueAtTime(80,AC.currentTime);
-  o.frequency.exponentialRampToValueAtTime(20,AC.currentTime+0.4);
-  og.gain.setValueAtTime(0.5,AC.currentTime);
-  og.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+0.45);
-  o.connect(og);og.connect(AC.destination);
-  o.start();o.stop(AC.currentTime+0.5);
-}
-
-// ══════════════════════════════════
-// ── FIRST INTERACTION ──
-// ══════════════════════════════════
+// ── First interaction ──
 let firstClick=false;
-function onFirstClick(){
-  if(firstClick)return;
-  firstClick=true;
-  ensureAudio();
-  startAmbient();
-  fadeMenuIn();
-  // preload stage music in background
-  if(AC)loadStageMusic();
-}
+function onFirstClick(){if(firstClick)return;firstClick=true;ensureAudio();startAmbient();fadeMenuIn();if(AC)loadStageMusic();}
 document.addEventListener('click',onFirstClick);
 document.addEventListener('keydown',onFirstClick);
 document.addEventListener('touchstart',onFirstClick);
 
 // ══════════════════════════════════
-// ── GAME ──
+// ── GAME BALANCE ──
 // ══════════════════════════════════
+// shootMin/shootRnd = base frames between enemy shots (higher = slower shooting)
+// bulletSpd = enemy bullet speed (lower = easier to dodge)
+// diveChance = per-enemy per-frame chance to dive (lower = fewer divers)
+// descentPx = how far formation descends over time
+// formSpeed = horizontal sway speed
+// shooterPct = fraction of enemies that CAN shoot (0.0-1.0)
+// lives = starting lives
+
 const DIFF={
-  easy:{shootMin:300,shootRnd:400,bulletSpd:IS_RETINA?2.2:1.6,diveChance:0.00012,descentPx:28,formSpeed:0.28,waveShootBonus:20,waveBulletBonus:0.08,lives:5},
-  normal:{shootMin:180,shootRnd:220,bulletSpd:IS_RETINA?3.2:2.2,diveChance:0.00022,descentPx:36,formSpeed:0.35,waveShootBonus:12,waveBulletBonus:0.12,lives:3},
-  hard:{shootMin:90,shootRnd:110,bulletSpd:IS_RETINA?4.5:3.2,diveChance:0.00042,descentPx:48,formSpeed:0.44,waveShootBonus:6,waveBulletBonus:0.18,lives:2},
+  easy:{
+    shootMin:600, shootRnd:800,
+    bulletSpd:IS_RETINA?1.4:1.0,
+    diveChance:0.00004,
+    descentPx:18, formSpeed:0.18,
+    shooterPct:0.3,
+    lives:5
+  },
+  normal:{
+    shootMin:350, shootRnd:450,
+    bulletSpd:IS_RETINA?2.2:1.6,
+    diveChance:0.00015,
+    descentPx:30, formSpeed:0.30,
+    shooterPct:0.55,
+    lives:3
+  },
+  hard:{
+    shootMin:160, shootRnd:200,
+    bulletSpd:IS_RETINA?3.5:2.5,
+    diveChance:0.00035,
+    descentPx:44, formSpeed:0.40,
+    shooterPct:0.8,
+    lives:2
+  },
 };
-let difficulty='easy',D=DIFF[difficulty];
-let waveShootMin,waveBulletSpd,waveDiveChance,waveFormSpeed;
-function computeWaveParams(){
-  const wb=wave-1;
-  waveShootMin=Math.max(D.shootMin-wb*D.waveShootBonus,Math.floor(D.shootMin*0.4));
-  waveBulletSpd=Math.min(D.bulletSpd+wb*D.waveBulletBonus,D.bulletSpd+0.6);
-  waveDiveChance=Math.min(D.diveChance*(1+wb*0.15),D.diveChance*2.5);
-  waveFormSpeed=Math.min(D.formSpeed*(1+wb*0.08),D.formSpeed*1.6);
+
+// Wave progression curves — waves 1-4 ramp slowly, then steeper
+// Returns a multiplier 0.0 → 1.0 based on wave
+function waveRamp(w){
+  // w1=0, w2=0.15, w3=0.35, w4=0.55, w5+=accelerating
+  if(w<=1)return 0;
+  if(w<=4)return (w-1)*0.18;
+  return 0.54+(w-4)*0.12;
 }
+
+let difficulty='easy',D=DIFF[difficulty];
+let waveShootMin,waveBulletSpd,waveDiveChance,waveFormSpeed,waveShooterPct;
+
+function computeWaveParams(){
+  const r=Math.min(waveRamp(wave),1.0);
+  // shoot interval decreases with wave (enemies shoot faster)
+  waveShootMin=Math.max(D.shootMin*(1-r*0.5), D.shootMin*0.35);
+  // bullet speed increases slightly
+  waveBulletSpd=D.bulletSpd*(1+r*0.4);
+  // dive chance increases
+  waveDiveChance=D.diveChance*(1+r*2.0);
+  // formation speed increases
+  waveFormSpeed=D.formSpeed*(1+r*0.5);
+  // fraction of enemies that shoot increases
+  waveShooterPct=Math.min(D.shooterPct+r*0.3, 0.95);
+}
+
 function setDiff(d,btn){
   difficulty=d;D=DIFF[d];
   document.querySelectorAll('.diff-btn').forEach(b=>b.classList.remove('active'));
@@ -403,9 +311,17 @@ function spawnEnemies(){
   enemies=[];formDescentOffset=0;descentFrame=0;
   const cols=BASE_COLS+Math.min(wave-1,5),rows=BASE_ROWS+Math.min(Math.floor((wave-1)/2),4);
   const offX=(W-(cols-1)*SPACING)/2,offY=IS_RETINA?100:70;
+  const totalEnemies=cols*rows;
+  // determine which enemies can shoot based on shooterPct
+  const shooterCount=Math.max(3,Math.floor(totalEnemies*waveShooterPct));
+  const shooterIndices=new Set();
+  while(shooterIndices.size<shooterCount){shooterIndices.add(Math.floor(Math.random()*totalEnemies));}
+  let idx=0;
   for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
     const type=r<1?5:r<2?3:r%2===0?0:1+Math.floor(r/2)%4;
-    enemies.push({x:offX+c*SPACING,y:offY+r*SPACING,baseX:offX+c*SPACING,baseY:offY+r*SPACING,type:type%6,hp:r===0?2:1,diving:false,diveAngle:0,diveSpeed:0,shootTimer:waveShootMin+Math.random()*D.shootRnd+(r+c)*18,phase:Math.random()*Math.PI*2,alive:true});
+    const canShoot=shooterIndices.has(idx);
+    enemies.push({x:offX+c*SPACING,y:offY+r*SPACING,baseX:offX+c*SPACING,baseY:offY+r*SPACING,type:type%6,hp:r===0?2:1,diving:false,diveAngle:0,diveSpeed:0,shootTimer:canShoot?(waveShootMin+Math.random()*D.shootRnd+(r+c)*30):-1,canShoot:canShoot,phase:Math.random()*Math.PI*2,alive:true});
+    idx++;
   }
 }
 
@@ -419,8 +335,10 @@ function updateEnemies(t){
     if(!e.diving){
       e.x=e.baseX+formX;e.y=e.baseY+formDescentOffset+Math.sin(t*.001+e.phase)*3;
       if(Math.random()<waveDiveChance&&!waveClearing){e.diving=true;e.diveAngle=Math.atan2(player.y-e.y,player.x-e.x);e.diveSpeed=IS_RETINA?3.5:2.5;}
-      e.shootTimer--;
-      if(e.shootTimer<=0){e.shootTimer=waveShootMin+Math.random()*D.shootRnd;enemyBullets.push({x:e.x,y:e.y+ENEMY_SIZE/2,vy:waveBulletSpd});}
+      if(e.canShoot&&e.shootTimer>=0){
+        e.shootTimer--;
+        if(e.shootTimer<=0){e.shootTimer=waveShootMin+Math.random()*D.shootRnd;enemyBullets.push({x:e.x,y:e.y+ENEMY_SIZE/2,vy:waveBulletSpd});}
+      }
     } else {
       e.x+=Math.cos(e.diveAngle)*e.diveSpeed;e.y+=Math.sin(e.diveAngle)*e.diveSpeed;e.diveSpeed+=.05;
       if(e.y>H+60||e.x<-60||e.x>W+60){e.diving=false;e.x=e.baseX+formX;e.y=e.baseY+formDescentOffset;e.diveSpeed=IS_RETINA?3.5:2.5;}
@@ -523,13 +441,10 @@ function showScreen(s){
 }
 
 function startGame(){
-  ensureAudio();
-  if(AC&&AC.state==='suspended')AC.resume();
-  startAmbient();
+  ensureAudio();if(AC&&AC.state==='suspended')AC.resume();startAmbient();
   D=DIFF[difficulty];score=0;wave=1;lives=D.lives;
   formX=0;formDir=1;descentFrame=0;formDescentOffset=0;playerHitCooldown=0;
   updateHUD();initGame();
-  // fade out menu → fade in stage
   fadeMenuOut().then(()=>playStageMusic(wave));
   showScreen('play');
 }
@@ -543,12 +458,7 @@ function nextWave(){
 }
 
 document.getElementById('start-btn').onclick=startGame;
-document.getElementById('retry-btn').onclick=()=>{
-  stopAllMusic();
-  document.getElementById('over-screen').style.display='none';
-  document.getElementById('start-screen').style.display='flex';
-  setTimeout(()=>fadeMenuIn(),300);
-};
+document.getElementById('retry-btn').onclick=()=>{stopAllMusic();document.getElementById('over-screen').style.display='none';document.getElementById('start-screen').style.display='flex';setTimeout(()=>fadeMenuIn(),300);};
 document.getElementById('next-btn').onclick=nextWave;
 
 window.addEventListener('keydown',e=>{keys[e.key]=true;if(e.key===' ')e.preventDefault();});

@@ -91,130 +91,125 @@ const ENEMY_SIZE=IS_RETINA?27:19,SPACING=IS_RETINA?50:34;
 const BASE_COLS=11,BASE_ROWS=4;
 
 // ══════════════════════════════════
-// ── AUDIO CONTEXT (single source of truth) ──
+// ── AUDIO CONTEXT ──
 // ══════════════════════════════════
 let AC=null;
-let audioReady=false;
 
 function ensureAudio(){
   if(AC)return;
   try{
     AC=new(window.AudioContext||window.webkitAudioContext)();
-    audioReady=true;
-    console.log('AudioContext created, state:',AC.state);
-  }catch(e){console.warn('AudioContext failed:',e);}
+    if(AC.state==='suspended')AC.resume();
+  }catch(e){console.warn('AC fail',e);}
 }
 
 // ══════════════════════════════════
-// ── MUSIC SYSTEM ──
+// ── MENU MUSIC (HTML Audio — streams, no decode wait) ──
 // ══════════════════════════════════
-const MUSIC_FILES={
-  menu:'main%20menu.wav',
-  stage1:'stage%20I.mp3',
-  stage2:'stage%20II.mp3'
-};
-const MUSIC_VOL={menu:0.25,stage:0.22};
+const menuAudio=new Audio('main menu.wav');
+menuAudio.loop=true;
+menuAudio.volume=0;
+let menuFadeInterval=null;
+let menuPlaying=false;
+
+function fadeMenuIn(){
+  menuAudio.volume=0;
+  menuAudio.play().catch(()=>{});
+  menuPlaying=true;
+  clearInterval(menuFadeInterval);
+  menuFadeInterval=setInterval(()=>{
+    if(menuAudio.volume<0.25){
+      menuAudio.volume=Math.min(0.25,menuAudio.volume+0.005);
+    }else{clearInterval(menuFadeInterval);}
+  },30);
+}
+
+function fadeMenuOut(){
+  if(!menuPlaying)return new Promise(r=>r());
+  return new Promise(resolve=>{
+    clearInterval(menuFadeInterval);
+    menuFadeInterval=setInterval(()=>{
+      if(menuAudio.volume>0.01){
+        menuAudio.volume=Math.max(0,menuAudio.volume-0.008);
+      }else{
+        clearInterval(menuFadeInterval);
+        menuAudio.pause();
+        menuAudio.currentTime=0;
+        menuPlaying=false;
+        resolve();
+      }
+    },30);
+  });
+}
+
+// ══════════════════════════════════
+// ── STAGE MUSIC (Web Audio API — decoded buffers) ──
+// ══════════════════════════════════
+const STAGE_FILES={stage1:'stage I.mp3',stage2:'stage II.mp3'};
+const STAGE_VOL=0.22;
 const FADE_IN=2.0,FADE_OUT=1.2;
 
-let musicBuffers={};
-let currentTrack=null;
-let musicLoading=false;
-let musicLoaded=false;
+let stageBuffers={};
+let stageTrack=null; // {source, gain, name}
+let stageLoading=null;
+let stageLoaded=false;
 
-function loadAllMusic(){
-  if(musicLoaded)return Promise.resolve();
-  if(musicLoading)return musicLoading;
-  console.log('Loading music files...');
-  const names=Object.keys(MUSIC_FILES);
-  musicLoading=Promise.all(names.map(name=>{
-    const url=MUSIC_FILES[name];
-    console.log('Fetching:',url);
-    return fetch(url)
-      .then(r=>{
-        console.log(name,'fetch status:',r.status);
-        if(!r.ok)throw new Error(name+' HTTP '+r.status);
-        return r.arrayBuffer();
-      })
-      .then(buf=>{
-        console.log(name,'decoding',buf.byteLength,'bytes');
-        return AC.decodeAudioData(buf);
-      })
-      .then(decoded=>{
-        musicBuffers[name]=decoded;
-        console.log(name,'decoded OK, duration:',decoded.duration.toFixed(1)+'s');
-      })
-      .catch(e=>console.warn('Music load FAIL:',name,e.message));
-  })).then(()=>{
-    musicLoaded=true;
-    console.log('All music loaded. Buffers:',Object.keys(musicBuffers));
-  });
-  return musicLoading;
+function loadStageMusic(){
+  if(stageLoaded)return Promise.resolve();
+  if(stageLoading)return stageLoading;
+  if(!AC)return Promise.resolve();
+  stageLoading=Promise.all(Object.keys(STAGE_FILES).map(name=>{
+    return fetch(STAGE_FILES[name])
+      .then(r=>{if(!r.ok)throw new Error(r.status);return r.arrayBuffer();})
+      .then(buf=>AC.decodeAudioData(buf))
+      .then(decoded=>{stageBuffers[name]=decoded;})
+      .catch(e=>console.warn('Stage load fail:',name,e));
+  })).then(()=>{stageLoaded=true;});
+  return stageLoading;
 }
 
-function playTrack(name,vol){
-  if(!AC||!musicBuffers[name]){
-    console.warn('playTrack skip:','AC=',!!AC,'buffer=',!!musicBuffers[name],name);
-    return;
-  }
+function playStageTrack(name){
+  if(!AC||!stageBuffers[name])return;
   if(AC.state==='suspended')AC.resume();
   const src=AC.createBufferSource();
   const gain=AC.createGain();
-  src.buffer=musicBuffers[name];
+  src.buffer=stageBuffers[name];
   src.loop=true;
   gain.gain.setValueAtTime(0,AC.currentTime);
-  gain.gain.linearRampToValueAtTime(vol,AC.currentTime+FADE_IN);
-  src.connect(gain);
-  gain.connect(AC.destination);
+  gain.gain.linearRampToValueAtTime(STAGE_VOL,AC.currentTime+FADE_IN);
+  src.connect(gain);gain.connect(AC.destination);
   src.start(0);
-  currentTrack={source:src,gain:gain,name:name};
-  console.log('Playing:',name,'vol:',vol);
+  stageTrack={source:src,gain:gain,name:name};
 }
 
-function stopCurrentTrack(){
+function stopStageTrack(){
   return new Promise(resolve=>{
-    if(!currentTrack||!AC){resolve();return;}
+    if(!stageTrack||!AC){resolve();return;}
     const t=AC.currentTime;
-    const g=currentTrack.gain;
+    const g=stageTrack.gain;
     g.gain.cancelScheduledValues(t);
     g.gain.setValueAtTime(g.gain.value,t);
     g.gain.linearRampToValueAtTime(0,t+FADE_OUT);
-    const ref=currentTrack;
-    currentTrack=null;
-    setTimeout(()=>{
-      try{ref.source.stop();}catch(e){}
-      resolve();
-    },FADE_OUT*1000+100);
+    const ref=stageTrack;
+    stageTrack=null;
+    setTimeout(()=>{try{ref.source.stop();}catch(e){}resolve();},FADE_OUT*1000+100);
   });
 }
 
-function crossfadeTo(name,vol){
-  if(currentTrack&&currentTrack.name===name)return Promise.resolve();
-  return stopCurrentTrack().then(()=>playTrack(name,vol));
-}
-
-function getStageTrack(waveNum){
-  return (waveNum%2===1)?'stage1':'stage2';
-}
-
-function playMenuMusic(){
-  if(!AC)return;
-  loadAllMusic().then(()=>{
-    console.log('Menu music: starting crossfade');
-    crossfadeTo('menu',MUSIC_VOL.menu);
-  });
+function switchToStage(waveNum){
+  const name=(waveNum%2===1)?'stage1':'stage2';
+  if(stageTrack&&stageTrack.name===name)return;
+  stopStageTrack().then(()=>playStageTrack(name));
 }
 
 function playStageMusic(waveNum){
   if(!AC)return;
-  const track=getStageTrack(waveNum);
-  loadAllMusic().then(()=>{
-    console.log('Stage music: wave',waveNum,'track:',track);
-    crossfadeTo(track,MUSIC_VOL.stage);
-  });
+  loadStageMusic().then(()=>switchToStage(waveNum));
 }
 
-function stopMusic(){
-  stopCurrentTrack();
+function stopAllMusic(){
+  fadeMenuOut();
+  stopStageTrack();
 }
 
 // ══════════════════════════════════
@@ -228,19 +223,16 @@ function startAmbient(){
   const master=AC.createGain();
   master.gain.setValueAtTime(0.09,AC.currentTime);
   master.connect(AC.destination);
-
   [55,55.3].forEach(freq=>{
     const o=AC.createOscillator(),g=AC.createGain();
     o.type='sine';o.frequency.setValueAtTime(freq,AC.currentTime);
     g.gain.setValueAtTime(0.5,AC.currentTime);
     o.connect(g);g.connect(master);o.start();
   });
-
   const sub=AC.createOscillator(),subG=AC.createGain();
   sub.type='sine';sub.frequency.setValueAtTime(27.5,AC.currentTime);
   subG.gain.setValueAtTime(0.4,AC.currentTime);
   sub.connect(subG);subG.connect(master);sub.start();
-
   const bufSize=AC.sampleRate*2;
   const buf=AC.createBuffer(1,bufSize,AC.sampleRate);
   const data=buf.getChannelData(0);
@@ -251,12 +243,10 @@ function startAmbient(){
   nf.type='bandpass';nf.frequency.setValueAtTime(120,AC.currentTime);nf.Q.value=0.5;
   const ng=AC.createGain();ng.gain.setValueAtTime(0.06,AC.currentTime);
   noise.connect(nf);nf.connect(ng);ng.connect(master);noise.start();
-
   const lfo=AC.createOscillator(),lfoG=AC.createGain();
   lfo.frequency.setValueAtTime(0.08,AC.currentTime);
   lfoG.gain.setValueAtTime(0.06,AC.currentTime);
   lfo.connect(lfoG);lfoG.connect(master.gain);lfo.start();
-
   schedulePings(master);
 }
 
@@ -339,21 +329,21 @@ function sndExplode(){
 }
 
 // ══════════════════════════════════
-// ── FIRST INTERACTION → start audio + menu music ──
+// ── FIRST INTERACTION ──
 // ══════════════════════════════════
-let firstInteraction=false;
-function onFirstInteraction(){
-  if(firstInteraction)return;
-  firstInteraction=true;
+let firstClick=false;
+function onFirstClick(){
+  if(firstClick)return;
+  firstClick=true;
   ensureAudio();
-  if(AC&&AC.state==='suspended')AC.resume();
   startAmbient();
-  playMenuMusic();
-  console.log('First interaction: audio init + menu music');
+  fadeMenuIn();
+  // preload stage music in background
+  if(AC)loadStageMusic();
 }
-document.addEventListener('click',onFirstInteraction,{once:false});
-document.addEventListener('keydown',onFirstInteraction,{once:false});
-document.addEventListener('touchstart',onFirstInteraction,{once:false});
+document.addEventListener('click',onFirstClick);
+document.addEventListener('keydown',onFirstClick);
+document.addEventListener('touchstart',onFirstClick);
 
 // ══════════════════════════════════
 // ── GAME ──
@@ -471,7 +461,7 @@ function checkCollisions(){
 function hitPlayer(){
   if(playerHitCooldown>0)return;
   lives--;playerHitCooldown=120;spawnParticles(player.x,player.y,16);sndExplode();updateHUD();
-  if(lives<=0){stopMusic();setTimeout(()=>showScreen('over'),400);}
+  if(lives<=0){stopAllMusic();setTimeout(()=>showScreen('over'),400);}
 }
 
 function updateParticles(){
@@ -539,7 +529,8 @@ function startGame(){
   D=DIFF[difficulty];score=0;wave=1;lives=D.lives;
   formX=0;formDir=1;descentFrame=0;formDescentOffset=0;playerHitCooldown=0;
   updateHUD();initGame();
-  playStageMusic(wave);
+  // fade out menu → fade in stage
+  fadeMenuOut().then(()=>playStageMusic(wave));
   showScreen('play');
 }
 
@@ -553,10 +544,10 @@ function nextWave(){
 
 document.getElementById('start-btn').onclick=startGame;
 document.getElementById('retry-btn').onclick=()=>{
-  stopMusic();
+  stopAllMusic();
   document.getElementById('over-screen').style.display='none';
   document.getElementById('start-screen').style.display='flex';
-  setTimeout(()=>playMenuMusic(),200);
+  setTimeout(()=>fadeMenuIn(),300);
 };
 document.getElementById('next-btn').onclick=nextWave;
 

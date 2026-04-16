@@ -95,10 +95,51 @@ const BASE_COLS=11,BASE_ROWS=4;
 // ══════════════════════════════════
 let AC=null;
 
+// ── Background Music (mp3) ──
+let bgMusic=null;
+let bgMusicGain=null;
+
 function initAudio(){
   if(AC)return;
   AC=new(window.AudioContext||window.webkitAudioContext)();
   startAmbient();
+}
+
+function startBGMusic(){
+  if(!AC||bgMusic)return;
+  bgMusicGain=AC.createGain();
+  bgMusicGain.gain.setValueAtTime(0,AC.currentTime);
+  bgMusicGain.gain.linearRampToValueAtTime(0.18,AC.currentTime+3);
+  bgMusicGain.connect(AC.destination);
+
+  fetch('Space Telescope (Full Version).mp3')
+    .then(r=>{if(!r.ok)throw new Error('Music file not found');return r.arrayBuffer();})
+    .then(buf=>AC.decodeAudioData(buf))
+    .then(decoded=>{
+      bgMusic=AC.createBufferSource();
+      bgMusic.buffer=decoded;
+      bgMusic.loop=true;
+      bgMusic.connect(bgMusicGain);
+      bgMusic.start(0);
+    })
+    .catch(e=>console.warn('BG music not loaded:',e.message));
+}
+
+function stopBGMusic(){
+  if(!bgMusicGain||!bgMusic)return;
+  const t=AC.currentTime;
+  bgMusicGain.gain.cancelScheduledValues(t);
+  bgMusicGain.gain.setValueAtTime(bgMusicGain.gain.value,t);
+  bgMusicGain.gain.linearRampToValueAtTime(0,t+1.5);
+  setTimeout(()=>{
+    try{bgMusic.stop();}catch(e){}
+    bgMusic=null;bgMusicGain=null;
+  },2000);
+}
+
+function resumeBGMusic(){
+  if(bgMusic)return;
+  startBGMusic();
 }
 
 function startAmbient(){
@@ -332,7 +373,7 @@ function checkCollisions(){
 function hitPlayer(){
   if(playerHitCooldown>0)return;
   lives--;playerHitCooldown=120;spawnParticles(player.x,player.y,16);sndExplode();updateHUD();
-  if(lives<=0)setTimeout(()=>showScreen('over'),400);
+  if(lives<=0){stopBGMusic();setTimeout(()=>showScreen('over'),400);}
 }
 
 function updateParticles(){
@@ -395,6 +436,7 @@ function showScreen(s){
 
 function startGame(){
   initAudio();
+  startBGMusic();
   D=DIFF[difficulty];score=0;wave=1;lives=D.lives;
   formX=0;formDir=1;descentFrame=0;formDescentOffset=0;playerHitCooldown=0;
   updateHUD();initGame();showScreen('play');
@@ -406,7 +448,7 @@ function nextWave(){
 }
 
 document.getElementById('start-btn').onclick=startGame;
-document.getElementById('retry-btn').onclick=()=>{document.getElementById('over-screen').style.display='none';document.getElementById('start-screen').style.display='flex';};
+document.getElementById('retry-btn').onclick=()=>{stopBGMusic();document.getElementById('over-screen').style.display='none';document.getElementById('start-screen').style.display='flex';};
 document.getElementById('next-btn').onclick=nextWave;
 
 window.addEventListener('keydown',e=>{keys[e.key]=true;if(e.key===' ')e.preventDefault();});
